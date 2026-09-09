@@ -1,0 +1,26 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}Your test drive is confirmed · {{ date }}{% endblock %}
+{% block content %}
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">APPOINTMENT CONFIRMED</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">Your test drive is set.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">{{ seller_name }} confirmed your appointment to see the {{ year }} {{ make }} {{ model }}.</p>
+
+<!-- Details table -->
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 12px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">DETAILS</p>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;">
+    <tr><td style="padding:8px 0;color:#888780;">Date</td><td style="padding:8px 0;text-align:right;color:#1A1714;">{{ date }}</td></tr>
+    <tr><td style="padding:8px 0;color:#888780;border-top:0.5px solid rgba(0,0,0,0.06);">Time</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">{{ time }}</td></tr>
+    <tr><td style="padding:8px 0;color:#888780;border-top:0.5px solid rgba(0,0,0,0.06);">Location</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">{{ location }}</td></tr>
+    {% if address %}<tr><td style="padding:8px 0;color:#888780;border-top:0.5px solid rgba(0,0,0,0.06);">Address</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">{{ address }}</td></tr>{% endif %}
+  </table>
+</div>
+
+<div style="margin-top:24px;text-align:center;">
+  <a href="{{ frontend_url }}/appointments" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">View appointment →</a>
+</div>
+<p style="margin:12px 0 0;font-size:12px;color:#888780;text-align:center;">Arrive 5 minutes early. Bring your ID.</p>
+{% endblock %}

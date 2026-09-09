@@ -1,0 +1,40 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}New cars this week from your searches{% endblock %}
+{% block content %}
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">WEEKLY DIGEST · {{ date_range|default:"THIS WEEK" }}</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">New arrivals from your saved searches.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">Here's what showed up this week matching cars you've been watching.</p>
+
+{% for search in saved_searches %}
+<div style="padding-top:20px;{% if not forloop.first %}margin-top:20px;{% endif %}border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 4px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">{{ search.name|default:"SAVED SEARCH" }}</p>
+  <p style="margin:0 0 12px;font-size:13px;color:#5F5E5A;">{{ search.count|default:0 }} new match{{ search.count|default:0|pluralize:"es" }}</p>
+
+  {% for car in search.top_listings %}
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px;">
+    <tr>
+      <td style="width:60px;vertical-align:middle;">
+        <div style="width:60px;height:60px;border-radius:6px;background:#F0EDE7;"></div>
+      </td>
+      <td style="padding-left:12px;vertical-align:middle;">
+        <p style="margin:0;font-size:14px;font-weight:500;color:#1A1714;">{{ car.year }} {{ car.make }} {{ car.model }}</p>
+        <p style="margin:2px 0 0;font-size:13px;color:#888780;">SAR {{ car.price|floatformat:0 }}</p>
+      </td>
+    </tr>
+  </table>
+  {% endfor %}
+</div>
+{% empty %}
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0;font-size:14px;color:#5F5E5A;">No new matches this week. We'll keep looking.</p>
+</div>
+{% endfor %}
+
+<div style="margin-top:24px;text-align:center;">
+  <a href="{{ frontend_url }}/browse" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">See all results →</a>
+</div>
+<p style="margin:12px 0 0;font-size:12px;color:#888780;text-align:center;">Adjust which searches send digests in your notification preferences.</p>
+{% endblock %}

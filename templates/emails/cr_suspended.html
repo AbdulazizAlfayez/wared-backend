@@ -1,0 +1,14 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<h2 style="color:#dc2626;font-size:20px;">Account Suspended — CR Expired</h2>
+<p>Dear {{ name }},</p>
+<p>Your Commercial Registration for <strong>{{ business_name }}</strong> expired on {{ expiry_date }}. Your account has been suspended and your listings are hidden.</p>
+<p>To reactivate, please renew your CR and submit it through your dashboard.</p>
+<hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+<div dir="rtl" style="text-align:right;">
+<h2 style="color:#dc2626;font-size:20px;">تم تعليق الحساب — انتهى السجل التجاري</h2>
+<p>عزيزي {{ name }}،</p>
+<p>انتهى السجل التجاري الخاص بـ <strong>{{ business_name }}</strong> بتاريخ {{ expiry_date }}. تم تعليق حسابك وإخفاء إعلاناتك.</p>
+<p>لإعادة التفعيل، يرجى تجديد السجل التجاري وتقديمه عبر لوحة التحكم.</p>
+</div>
+{% endblock %}

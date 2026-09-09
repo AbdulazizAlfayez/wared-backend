@@ -1,0 +1,59 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}Your car is ready · choose pickup or delivery{% endblock %}
+{% block content %}
+<!-- Status pill -->
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">READY · CHOOSE DELIVERY</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">Your car is ready.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">Your {{ year }} {{ make }} {{ model }} passed inspection and is ready to come home. Choose how you'd like to receive it and settle the balance.</p>
+
+<!-- DELIVERY OPTIONS -->
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 14px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">DELIVERY OPTIONS</p>
+
+  <!-- Option A: Pickup -->
+  <div style="background:#FFFFFF;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;padding:16px;margin-bottom:10px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td><p style="margin:0;font-size:15px;font-weight:500;color:#1A1714;">Pickup at importer</p></td>
+        <td style="text-align:right;"><span style="font-size:14px;font-weight:500;color:#1A1714;">Free</span></td>
+      </tr>
+    </table>
+    <p style="margin:8px 0 0;font-size:13px;color:#888780;line-height:1.5;">{{ importer_business_name }} · {{ importer_address }}<br>{{ working_hours }} · Available from {{ ready_date }}</p>
+  </div>
+
+  <!-- Option B: Home delivery -->
+  <div style="background:#FFFFFF;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;padding:16px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td><p style="margin:0;font-size:15px;font-weight:500;color:#1A1714;">Home delivery</p></td>
+        <td style="text-align:right;"><span style="font-size:14px;font-weight:500;color:#1A1714;">+ SAR {{ delivery_fee }}</span></td>
+      </tr>
+    </table>
+    <p style="margin:8px 0 0;font-size:13px;color:#888780;line-height:1.5;">Delivered to your address within {{ buyer_city }}<br>Available {{ delivery_window }}</p>
+  </div>
+</div>
+
+<!-- MONEY BLOCK -->
+<div style="margin-top:24px;background:#1A1714;border-radius:8px;padding:24px;text-align:center;">
+  <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#B4B2A9;">BALANCE DUE ON DELIVERY</p>
+  <p style="margin:0;font-size:38px;font-weight:500;letter-spacing:-1px;line-height:1;color:#FFFFFF;">SAR {{ remaining_balance }}</p>
+  <p style="margin:8px 0 20px;font-size:13px;color:#B4B2A9;">Final price SAR {{ final_price }} · Deposit paid SAR {{ deposit_amount }}</p>
+  <a href="{{ payment_url }}" style="display:inline-block;padding:14px 36px;background:#FFFFFF;color:#1A1714;font-size:15px;font-weight:500;text-decoration:none;border-radius:8px;">Pay balance & choose delivery →</a>
+</div>
+
+<!-- INSPECTION RESULTS -->
+<div style="padding-top:24px;margin-top:24px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 14px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">INSPECTION RESULTS</p>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;">
+    <tr><td style="padding:8px 0;color:#5F5E5A;">✓ &nbsp;Engine & mechanical</td><td style="padding:8px 0;text-align:right;color:#1A1714;">Passed</td></tr>
+    <tr><td style="padding:8px 0;color:#5F5E5A;border-top:0.5px solid rgba(0,0,0,0.06);">✓ &nbsp;Emissions compliance</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">Passed</td></tr>
+    <tr><td style="padding:8px 0;color:#5F5E5A;border-top:0.5px solid rgba(0,0,0,0.06);">✓ &nbsp;Odometer verified</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">{{ odometer }} km</td></tr>
+    <tr><td style="padding:8px 0;color:#5F5E5A;border-top:0.5px solid rgba(0,0,0,0.06);">✓ &nbsp;SASO certificate</td><td style="padding:8px 0;text-align:right;color:#1A1714;font-family:monospace;border-top:0.5px solid rgba(0,0,0,0.06);">{{ saso_cert_number }}</td></tr>
+  </table>
+</div>
+
+<p style="margin:20px 0 0;font-size:13px;color:#888780;text-align:center;">Inspection report and all documents attached to this email.</p>
+{% endblock %}

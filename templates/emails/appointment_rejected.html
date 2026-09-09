@@ -1,0 +1,22 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}Appointment update · {{ year }} {{ make }} {{ model }}{% endblock %}
+{% block content %}
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">APPOINTMENT UPDATE</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">That time didn't work.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">{{ seller_name }} couldn't confirm your appointment for the {{ year }} {{ make }} {{ model }}. The car is still available — pick another time or message the seller directly.</p>
+
+{% if rejection_reason %}
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);margin-bottom:24px;">
+  <div style="background:#FFFFFF;border-left:2px solid #1A1714;padding:12px 14px;border-radius:0 8px 8px 0;">
+    <p style="margin:0;font-size:14px;color:#5F5E5A;line-height:1.6;">"{{ rejection_reason }}"</p>
+  </div>
+</div>
+{% endif %}
+
+<div style="text-align:center;">
+  <a href="{{ frontend_url }}/car/{{ listing_id }}" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">Pick another time →</a>
+</div>
+{% endblock %}

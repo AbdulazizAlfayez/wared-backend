@@ -1,0 +1,28 @@
+{% extends "emails/base.html" %}
+{% block subject %}Account Warning — WARED{% endblock %}
+{% block content %}
+<h2 style="margin:0 0 16px;font-size:22px;color:#b45309;">⚠️ Account Warning</h2>
+<p style="margin:0 0 12px;font-size:15px;color:#475569;line-height:1.6;">
+  Hi <strong>{{ user.name }}</strong>,
+</p>
+<p style="margin:0 0 16px;font-size:15px;color:#475569;line-height:1.6;">
+  Your account has received a formal warning from our moderation team.
+</p>
+
+<div style="background:#fef9c3;border-left:4px solid #eab308;border-radius:6px;padding:14px 18px;margin-bottom:20px;">
+  <p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#854d0e;">Reason:</p>
+  <p style="margin:0;font-size:14px;color:#92400e;line-height:1.5;">{{ reason }}</p>
+</div>
+
+<p style="margin:0 0 12px;font-size:14px;color:#64748b;line-height:1.6;">
+  This is warning <strong>#{{ warning_count }}</strong> on your account. Repeated violations may result in
+  a temporary suspension or permanent ban.
+</p>
+<p style="margin:0 0 12px;font-size:14px;color:#64748b;line-height:1.6;">
+  Please review our <a href="{{ frontend_url }}/terms" style="color:#2d6a4f;">Terms of Service</a>
+  to ensure your activity complies with our community guidelines.
+</p>
+<p style="margin:0;font-size:13px;color:#94a3b8;">
+  If you believe this warning was issued in error, please contact our support team.
+</p>
+{% endblock %}

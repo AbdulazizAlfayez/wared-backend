@@ -1,0 +1,12 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<h2 style="color:#d97706;font-size:20px;">Action Required: CR Expires in 30 Days</h2>
+<p>Dear {{ name }},</p>
+<p>Your Commercial Registration for <strong>{{ business_name }}</strong> expires on <strong>{{ expiry_date }}</strong>. You have 30 days to renew before your account is suspended.</p>
+<hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+<div dir="rtl" style="text-align:right;">
+<h2 style="color:#d97706;font-size:20px;">إجراء مطلوب: ينتهي السجل التجاري خلال 30 يومًا</h2>
+<p>عزيزي {{ name }}،</p>
+<p>ينتهي السجل التجاري الخاص بـ <strong>{{ business_name }}</strong> بتاريخ <strong>{{ expiry_date }}</strong>. لديك 30 يومًا للتجديد قبل تعليق حسابك.</p>
+</div>
+{% endblock %}

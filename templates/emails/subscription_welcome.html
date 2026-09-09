@@ -1,0 +1,55 @@
+{% extends "emails/base.html" %}
+{% block subject %}Welcome to the {{ plan_name }} plan!{% endblock %}
+{% block content %}
+  <div style="text-align:center;margin:0 0 24px;">
+    <span style="display:inline-block;padding:6px 20px;background:#dcfce7;color:#166534;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      ✅ SUBSCRIPTION ACTIVE
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#1a3c5e;text-align:center;">
+    Welcome to {{ plan_name }}!
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    Hi {{ user_name }}, your subscription is now active and ready to use.
+  </p>
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 24px;">
+    <tr>
+      <td style="padding:20px 24px;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td width="50%" style="padding:0 0 12px;">
+              <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Plan</p>
+              <p style="margin:0;font-size:16px;font-weight:bold;color:#1a3c5e;">{{ plan_name }}</p>
+            </td>
+            <td width="50%" style="padding:0 0 12px;">
+              <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Billing</p>
+              <p style="margin:0;font-size:16px;font-weight:bold;color:#1a3c5e;">{{ billing_cycle|capfirst }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td width="50%">
+              <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Renews</p>
+              <p style="margin:0;font-size:16px;font-weight:bold;color:#1a3c5e;">📅 {{ expires_at }}</p>
+            </td>
+            {% if amount and amount != "0" %}
+            <td width="50%">
+              <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Amount</p>
+              <p style="margin:0;font-size:16px;font-weight:bold;color:#2d6a4f;">SAR {{ amount }}</p>
+            </td>
+            {% endif %}
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <div style="text-align:center;">
+    <a href="{{ frontend_url }}/dashboard"
+       style="display:inline-block;padding:14px 36px;background:#2d6a4f;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      Go to Dashboard →
+    </a>
+  </div>
+{% endblock %}

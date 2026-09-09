@@ -1,0 +1,14 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<h2 style="color:#1a1a1a;font-size:20px;">CR Expiry Reminder — 60 Days</h2>
+<p>Dear {{ name }},</p>
+<p>Your Commercial Registration for <strong>{{ business_name }}</strong> expires on <strong>{{ expiry_date }}</strong> (60 days from now).</p>
+<p>Please start the renewal process to avoid any service interruption.</p>
+<hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+<div dir="rtl" style="text-align:right;">
+<h2 style="color:#1a1a1a;font-size:20px;">تذكير بانتهاء السجل التجاري — 60 يومًا</h2>
+<p>عزيزي {{ name }}،</p>
+<p>ينتهي السجل التجاري الخاص بـ <strong>{{ business_name }}</strong> بتاريخ <strong>{{ expiry_date }}</strong> (بعد 60 يومًا).</p>
+<p>يرجى البدء بعملية التجديد لتجنب انقطاع الخدمة.</p>
+</div>
+{% endblock %}

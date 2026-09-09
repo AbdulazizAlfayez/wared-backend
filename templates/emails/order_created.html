@@ -1,0 +1,65 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}New order · {{ year }} {{ make }} {{ model }} · {{ order_number }}{% endblock %}
+{% block content %}
+<!-- Status pill -->
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">NEW ORDER · ACTION REQUIRED</span>
+</div>
+
+<!-- Headline -->
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">A buyer reserved your car.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">Confirm within 24 hours to start the import. Once confirmed, the buyer will be sent a deposit link.</p>
+
+<!-- ORDER -->
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 4px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">ORDER</p>
+  <p style="margin:0 0 2px;font-size:15px;color:#1A1714;font-family:monospace;">{{ order_number }}</p>
+  <p style="margin:0;font-size:13px;color:#888780;">Placed {{ placed_at }}</p>
+</div>
+
+<!-- BUYER -->
+<div style="padding-top:20px;margin-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">BUYER</p>
+  <table cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="vertical-align:middle;padding-right:12px;">
+        <div style="width:38px;height:38px;border-radius:50%;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-align:center;line-height:38px;">{{ buyer_initials }}</div>
+      </td>
+      <td style="vertical-align:middle;">
+        <p style="margin:0;font-size:15px;font-weight:500;color:#1A1714;">{{ buyer_name }}</p>
+        <p style="margin:2px 0 0;font-size:13px;color:#888780;">{{ buyer_email }} · {{ buyer_phone }}</p>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<!-- VEHICLE -->
+<div style="padding-top:20px;margin-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">VEHICLE</p>
+  <p style="margin:0 0 2px;font-size:18px;font-weight:500;color:#1A1714;">{{ year }} {{ make }} {{ model }}</p>
+  <p style="margin:0 0 16px;font-size:13px;color:#888780;">{{ source_country }} · {{ auction_source }} lot #{{ auction_lot_number }}</p>
+
+  <!-- Cost breakdown table -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;">
+    <tr><td style="padding:8px 0;color:#5F5E5A;">Car price</td><td style="padding:8px 0;text-align:right;color:#1A1714;">{{ car_price_source_currency_display }}</td></tr>
+    <tr><td style="padding:8px 0;color:#5F5E5A;border-top:0.5px solid rgba(0,0,0,0.06);">Shipping</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">SAR {{ shipping_cost }}</td></tr>
+    <tr><td style="padding:8px 0;color:#5F5E5A;border-top:0.5px solid rgba(0,0,0,0.06);">Customs duty (5%)</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">SAR {{ customs_duty }}</td></tr>
+    <tr><td style="padding:8px 0;color:#5F5E5A;border-top:0.5px solid rgba(0,0,0,0.06);">VAT (15%)</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">SAR {{ vat_amount }}</td></tr>
+    <tr><td style="padding:8px 0;color:#5F5E5A;border-top:0.5px solid rgba(0,0,0,0.06);">Fees</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">SAR {{ fees_total }}</td></tr>
+    <tr><td style="padding:10px 0;font-weight:500;color:#1A1714;border-top:1px solid rgba(0,0,0,0.12);">Final price</td><td style="padding:10px 0;text-align:right;font-weight:500;color:#1A1714;border-top:1px solid rgba(0,0,0,0.12);">SAR {{ final_price }}</td></tr>
+  </table>
+</div>
+
+<!-- MONEY BLOCK -->
+<div style="margin-top:24px;background:#1A1714;border-radius:8px;padding:24px;">
+  <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#B4B2A9;">DEPOSIT YOU'LL REQUEST FROM BUYER</p>
+  <p style="margin:0;font-size:38px;font-weight:500;letter-spacing:-1px;line-height:1;color:#FFFFFF;">SAR {{ deposit_amount }}</p>
+  <p style="margin:8px 0 0;font-size:13px;color:#B4B2A9;">20% of total · Balance of SAR {{ remaining_balance }} due on delivery</p>
+</div>
+
+<!-- CTA -->
+<div style="margin-top:24px;text-align:center;">
+  <a href="{{ frontend_url }}/dashboard/importer/orders/{{ order_id }}" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">Review and confirm order →</a>
+</div>
+<p style="margin:12px 0 0;font-size:13px;color:#888780;text-align:center;">If you don't confirm within 24 hours, the buyer will be notified the order has lapsed.</p>
+{% endblock %}

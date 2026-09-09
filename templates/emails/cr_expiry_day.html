@@ -1,0 +1,12 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<h2 style="color:#dc2626;font-size:20px;">Your CR Expires Today</h2>
+<p>Dear {{ name }},</p>
+<p><strong>Your Commercial Registration for {{ business_name }} expires today ({{ expiry_date }}).</strong> Please renew immediately to avoid suspension.</p>
+<hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+<div dir="rtl" style="text-align:right;">
+<h2 style="color:#dc2626;font-size:20px;">ينتهي السجل التجاري الخاص بك اليوم</h2>
+<p>عزيزي {{ name }}،</p>
+<p><strong>ينتهي السجل التجاري الخاص بـ {{ business_name }} اليوم ({{ expiry_date }}).</strong> يرجى التجديد فورًا لتجنب التعليق.</p>
+</div>
+{% endblock %}

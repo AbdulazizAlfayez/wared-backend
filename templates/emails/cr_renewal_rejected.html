@@ -1,0 +1,16 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<h2 style="color:#dc2626;font-size:20px;">CR Renewal Rejected</h2>
+<p>Dear {{ name }},</p>
+<p>Your CR renewal for <strong>{{ business_name }}</strong> was rejected.</p>
+<p><strong>Reason:</strong> {{ reason }}</p>
+<p>You may correct the issue and resubmit through your dashboard.</p>
+<hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+<div dir="rtl" style="text-align:right;">
+<h2 style="color:#dc2626;font-size:20px;">تم رفض تجديد السجل التجاري</h2>
+<p>عزيزي {{ name }}،</p>
+<p>تم رفض تجديد السجل التجاري الخاص بـ <strong>{{ business_name }}</strong>.</p>
+<p><strong>السبب:</strong> {{ reason }}</p>
+<p>يمكنك تصحيح المشكلة وإعادة التقديم عبر لوحة التحكم.</p>
+</div>
+{% endblock %}

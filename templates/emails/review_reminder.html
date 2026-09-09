@@ -1,0 +1,78 @@
+{% extends "emails/base.html" %}
+{% block subject %}Share your experience — Order {{ order_number }}{% endblock %}
+{% block content %}
+  <!-- Badge -->
+  <div style="text-align:center;margin:0 0 24px;">
+    <span style="display:inline-block;padding:6px 20px;background:#fef9c3;color:#713f12;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      ⭐ REVIEW REMINDER
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#1a3c5e;text-align:center;">
+    How was your experience?
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    Hi <strong>{{ buyer_name }}</strong>, your car has been delivered!<br>
+    Help others by rating your experience with <strong>{{ importer_name }}</strong>.
+  </p>
+
+  <!-- Order summary card -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 24px;">
+    <tr>
+      <td style="padding:20px 24px;">
+        <p style="margin:0 0 4px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Order</p>
+        <p style="margin:0 0 16px;font-size:16px;font-weight:bold;color:#1a3c5e;">{{ order_number }}</p>
+
+        <p style="margin:0 0 4px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Car</p>
+        <p style="margin:0 0 16px;font-size:16px;font-weight:bold;color:#1a3c5e;">{{ car_year }} {{ car_make }} {{ car_model }}</p>
+
+        <p style="margin:0 0 4px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Importer</p>
+        <p style="margin:0;font-size:16px;font-weight:bold;color:#1a3c5e;">{{ importer_name }}</p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Rating dimensions preview -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 24px;">
+    <tr>
+      <td style="padding:16px 24px;">
+        <p style="margin:0 0 12px;font-size:14px;font-weight:bold;color:#1a3c5e;">Rate your experience on:</p>
+        <table width="100%" cellpadding="4" cellspacing="0" border="0" style="font-size:14px;color:#475569;">
+          <tr>
+            <td style="padding:4px 0;">💬 <strong>Communication</strong> — Was the importer responsive?</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;">📋 <strong>Accuracy</strong> — Did the car match the description?</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;">🚢 <strong>Delivery Speed</strong> — Was the timeline met?</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;">⭐ <strong>Overall Satisfaction</strong> — Would you recommend them?</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- CTA -->
+  <div style="text-align:center;margin:0 0 24px;">
+    <a href="{{ review_url }}"
+       style="display:inline-block;padding:14px 40px;background:#2d6a4f;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      Leave a Review →
+    </a>
+  </div>
+
+  {% if reminder_day == 14 %}
+  <p style="margin:0 0 16px;font-size:14px;color:#ef4444;text-align:center;font-weight:bold;">
+    This is your final reminder — the review window closes soon.
+  </p>
+  {% endif %}
+
+  <p style="margin:0;font-size:13px;color:#94a3b8;text-align:center;line-height:1.6;">
+    Your feedback helps improve the import experience for everyone on the platform.<br>
+    Reviews take less than 2 minutes to complete.
+  </p>
+{% endblock %}

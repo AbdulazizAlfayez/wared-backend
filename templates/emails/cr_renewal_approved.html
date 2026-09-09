@@ -1,0 +1,12 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<h2 style="color:#16a34a;font-size:20px;">CR Renewal Approved</h2>
+<p>Dear {{ name }},</p>
+<p>Your Commercial Registration for <strong>{{ business_name }}</strong> has been verified and approved. Your account is fully active.</p>
+<hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+<div dir="rtl" style="text-align:right;">
+<h2 style="color:#16a34a;font-size:20px;">تمت الموافقة على تجديد السجل التجاري</h2>
+<p>عزيزي {{ name }}،</p>
+<p>تم التحقق من السجل التجاري الخاص بـ <strong>{{ business_name }}</strong> والموافقة عليه. حسابك مفعل بالكامل.</p>
+</div>
+{% endblock %}

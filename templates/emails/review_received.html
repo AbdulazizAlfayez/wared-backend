@@ -1,0 +1,46 @@
+{% extends "emails/base.html" %}
+{% block subject %}You received a new {{ rating }}-star review!{% endblock %}
+{% block content %}
+  <!-- Badge -->
+  <div style="text-align:center;margin:0 0 24px;">
+    <span style="display:inline-block;padding:6px 20px;background:#fefce8;color:#854d0e;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      ⭐ NEW REVIEW
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#1a3c5e;text-align:center;">
+    Someone left you a review!
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    <strong>{{ reviewer_name }}</strong> gave you a <strong>{{ rating }}-star</strong> rating.
+  </p>
+
+  <!-- Star display -->
+  <div style="text-align:center;margin:0 0 24px;font-size:28px;">
+    {% for i in stars %}⭐{% endfor %}
+  </div>
+
+  <!-- Review details -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 20px;">
+    <tr>
+      <td style="padding:20px 24px;">
+        <p style="margin:0 0 6px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Review Title</p>
+        <p style="margin:0 0 16px;font-size:17px;font-weight:bold;color:#1a3c5e;">{{ review_title }}</p>
+        <p style="margin:0 0 6px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Comment</p>
+        <p style="margin:0;font-size:15px;color:#475569;line-height:1.6;font-style:italic;">"{{ comment }}"</p>
+      </td>
+    </tr>
+  </table>
+
+  <div style="text-align:center;">
+    <a href="{{ frontend_url }}/dashboard/reviews"
+       style="display:inline-block;padding:14px 36px;background:#2d6a4f;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      View Review &amp; Reply →
+    </a>
+  </div>
+
+  <p style="margin:24px 0 0;font-size:14px;color:#94a3b8;text-align:center;">
+    Replying to reviews builds trust and improves your reputation on the platform.
+  </p>
+{% endblock %}

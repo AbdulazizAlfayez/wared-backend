@@ -1,0 +1,75 @@
+{% extends "emails/base.html" %}
+{% block subject %}Your vehicle service is complete!{% endblock %}
+{% block content %}
+  <!-- Badge -->
+  <div style="text-align:center;margin:0 0 24px;">
+    <span style="display:inline-block;padding:6px 20px;background:#dbeafe;color:#1e40af;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      🎉 COMPLETED
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#1a3c5e;text-align:center;">
+    Service Completed!
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    {{ workshop_name }} has completed the service on your vehicle. Here's a summary:
+  </p>
+
+  <!-- Summary -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 20px;">
+    <tr>
+      <td style="padding:20px 24px;">
+        <p style="margin:0 0 4px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Workshop</p>
+        <p style="margin:0 0 16px;font-size:18px;font-weight:bold;color:#1a3c5e;">
+          🔧 {{ workshop_name }}
+        </p>
+
+        {% if service_name %}
+        <p style="margin:0 0 4px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Service Performed</p>
+        <p style="margin:0 0 16px;font-size:15px;color:#1a3c5e;">{{ service_name }}</p>
+        {% endif %}
+
+        <p style="margin:0 0 4px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Vehicle</p>
+        <p style="margin:0 0 16px;font-size:15px;color:#1a3c5e;">🚗 {{ vehicle_year }} {{ vehicle_make }} {{ vehicle_model }}{% if vehicle_plate %} · {{ vehicle_plate }}{% endif %}</p>
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td width="50%" style="padding:0 0 12px;">
+              <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Service Date</p>
+              <p style="margin:0;font-size:15px;font-weight:bold;color:#1a3c5e;">📅 {{ booking_date }}</p>
+            </td>
+            {% if final_cost %}
+            <td width="50%" style="padding:0 0 12px;">
+              <p style="margin:0 0 2px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Total Charged</p>
+              <p style="margin:0;font-size:15px;font-weight:bold;color:#2d6a4f;">SAR {{ final_cost }}</p>
+            </td>
+            {% endif %}
+          </tr>
+        </table>
+
+        {% if notes %}
+        <p style="margin:0 0 4px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Workshop Notes</p>
+        <p style="margin:0;font-size:14px;color:#475569;font-style:italic;">{{ notes }}</p>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <!-- Review CTA -->
+  <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:20px 24px;margin:0 0 24px;text-align:center;">
+    <p style="margin:0 0 8px;font-size:15px;font-weight:bold;color:#92400e;">Enjoyed the service?</p>
+    <p style="margin:0 0 16px;font-size:14px;color:#78350f;">Leave a review and help other drivers find great workshops.</p>
+    <a href="{{ frontend_url }}/workshop/{{ workshop_id }}"
+       style="display:inline-block;padding:10px 28px;background:#f59e0b;color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      Write a Review ⭐
+    </a>
+  </div>
+
+  <div style="text-align:center;">
+    <a href="{{ frontend_url }}/service-bookings"
+       style="display:inline-block;padding:14px 36px;background:#2d6a4f;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      View All Bookings →
+    </a>
+  </div>
+{% endblock %}

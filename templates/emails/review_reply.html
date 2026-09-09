@@ -1,0 +1,54 @@
+{% extends "emails/base.html" %}
+{% block subject %}Your review received a reply!{% endblock %}
+{% block content %}
+  <!-- Badge -->
+  <div style="text-align:center;margin:0 0 24px;">
+    <span style="display:inline-block;padding:6px 20px;background:#eff6ff;color:#1d4ed8;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      💬 REVIEW REPLY
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#1a3c5e;text-align:center;">
+    Your review got a reply!
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    <strong>{{ seller_name }}</strong> has replied to your review.
+  </p>
+
+  <!-- Original review -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 16px;">
+    <tr>
+      <td style="padding:16px 20px;">
+        <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Your Review</p>
+        <p style="margin:0;font-size:14px;color:#475569;line-height:1.6;font-style:italic;">"{{ original_comment }}"</p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Reply -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #2d6a4f;border-radius:0 8px 8px 0;margin:0 0 28px;">
+    <tr>
+      <td style="padding:16px 20px;">
+        <p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#166534;text-transform:uppercase;letter-spacing:0.5px;">
+          Reply from {{ seller_name }}
+        </p>
+        <p style="margin:0;font-size:15px;color:#14532d;line-height:1.6;font-style:italic;">
+          "{{ reply_comment }}"
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <div style="text-align:center;">
+    <a href="{{ frontend_url }}/reviews/{{ review_id }}"
+       style="display:inline-block;padding:14px 36px;background:#2d6a4f;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      View Full Review →
+    </a>
+  </div>
+
+  <p style="margin:24px 0 0;font-size:14px;color:#94a3b8;text-align:center;">
+    Thank you for sharing your experience on our platform.
+  </p>
+{% endblock %}

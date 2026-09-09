@@ -1,0 +1,12 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<h2 style="color:#dc2626;font-size:20px;">URGENT: CR Expires in 7 Days</h2>
+<p>Dear {{ name }},</p>
+<p><strong>Your Commercial Registration for {{ business_name }} expires on {{ expiry_date }}.</strong> If not renewed, your account and all listings will be automatically suspended.</p>
+<hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+<div dir="rtl" style="text-align:right;">
+<h2 style="color:#dc2626;font-size:20px;">عاجل: ينتهي السجل التجاري خلال 7 أيام</h2>
+<p>عزيزي {{ name }}،</p>
+<p><strong>ينتهي السجل التجاري الخاص بـ {{ business_name }} بتاريخ {{ expiry_date }}.</strong> في حال عدم التجديد، سيتم تعليق حسابك وجميع إعلاناتك تلقائيًا.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}تحديث على حجزك · Reservation Update — WARED{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 8px;font-size:28px;font-weight:500;letter-spacing:-0.5px;line-height:1.1;color:#1A1714;">تم إلغاء حجزك</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">مرحباً {{ name }}،</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:#5F5E5A;">
+  للأسف، المستورد ما قدر يقبل حجزك على <strong>{{ car_title }}</strong>.
+  {% if reason %}السبب: {{ reason }}{% endif %}
+</p>
+<p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#5F5E5A;">
+  رسوم الحجز (SAR 99) غير قابلة للاسترداد حسب شروط الاستخدام.
+</p>
+<p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#888;">
+  Unfortunately, the importer was unable to accept your reservation for {{ car_title }}.
+  {% if reason %}Reason: {{ reason }}. {% endif %}
+  The SAR 99 reservation fee is non-refundable per our terms of service.
+</p>
+<p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#5F5E5A;">
+  تقدر تتصفح سيارات مشابهة وتحجز من جديد.
+</p>
+
+<div style="text-align:center;margin:24px 0;">
+  <a href="{{ frontend_url }}/browse" style="display:inline-block;padding:14px 28px;background:#1A1714;color:#FAFAF7;text-decoration:none;border-radius:10px;font-size:14px;font-weight:500;">تصفّح السيارات / Browse cars →</a>
+</div>
+{% endblock %}

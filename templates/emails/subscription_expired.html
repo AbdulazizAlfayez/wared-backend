@@ -1,0 +1,30 @@
+{% extends "emails/base.html" %}
+{% block subject %}Your {{ plan_name }} subscription has expired{% endblock %}
+{% block content %}
+  <div style="text-align:center;margin:0 0 24px;">
+    <span style="display:inline-block;padding:6px 20px;background:#fee2e2;color:#991b1b;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      ❌ EXPIRED
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#1a3c5e;text-align:center;">
+    Your Subscription Has Expired
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    Hi {{ user_name }}, your <strong>{{ plan_name }}</strong> subscription has expired and you've been moved to the Free plan.
+    You can continue using the free features or upgrade to restore premium access.
+  </p>
+
+  <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:20px 24px;margin:0 0 24px;text-align:center;">
+    <p style="margin:0 0 8px;font-size:15px;font-weight:bold;color:#991b1b;">Your premium features are paused.</p>
+    <p style="margin:0 0 16px;font-size:14px;color:#dc2626;">Upgrade now to regain full access to analytics, showroom, and more.</p>
+    <a href="{{ frontend_url }}/subscription-plans"
+       style="display:inline-block;padding:12px 32px;background:#dc2626;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      Upgrade Now →
+    </a>
+  </div>
+
+  <p style="margin:24px 0 0;font-size:14px;color:#94a3b8;text-align:center;">
+    Your existing listings are still visible. Upgrade any time to unlock premium features again.
+  </p>
+{% endblock %}

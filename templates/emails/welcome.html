@@ -1,0 +1,42 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}Welcome to Wared, {{ name }}{% endblock %}
+{% block content %}
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">ACCOUNT VERIFIED</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">Welcome to Wared, {{ name }}.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">Any car. Anywhere. Delivered to you. Here's how to find what you're looking for and bring it home.</p>
+
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 16px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">THREE WAYS TO START</p>
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;">
+    <tr>
+      <td style="width:28px;vertical-align:top;padding-top:2px;"><div style="width:22px;height:22px;border-radius:50%;background:#1A1714;color:#FFFFFF;font-size:11px;font-weight:500;text-align:center;line-height:22px;">1</div></td>
+      <td style="padding-left:10px;"><p style="margin:0;font-size:15px;font-weight:500;color:#1A1714;">Browse imported cars</p><p style="margin:4px 0 0;font-size:13px;color:#5F5E5A;line-height:1.5;">Cars sourced from Japan, the USA, Korea, the UAE, and Europe by verified importers.</p></td>
+    </tr>
+  </table>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;">
+    <tr>
+      <td style="width:28px;vertical-align:top;padding-top:2px;"><div style="width:22px;height:22px;border-radius:50%;background:#1A1714;color:#FFFFFF;font-size:11px;font-weight:500;text-align:center;line-height:22px;">2</div></td>
+      <td style="padding-left:10px;"><p style="margin:0;font-size:15px;font-weight:500;color:#1A1714;">Estimate the landed cost</p><p style="margin:4px 0 0;font-size:13px;color:#5F5E5A;line-height:1.5;">Customs, VAT, shipping, inspection — every number transparent before you commit.</p></td>
+    </tr>
+  </table>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:4px;">
+    <tr>
+      <td style="width:28px;vertical-align:top;padding-top:2px;"><div style="width:22px;height:22px;border-radius:50%;background:#1A1714;color:#FFFFFF;font-size:11px;font-weight:500;text-align:center;line-height:22px;">3</div></td>
+      <td style="padding-left:10px;"><p style="margin:0;font-size:15px;font-weight:500;color:#1A1714;">Reserve and track</p><p style="margin:4px 0 0;font-size:13px;color:#5F5E5A;line-height:1.5;">Pay a 20% deposit held in escrow. We update you at every stage from purchase to your door.</p></td>
+    </tr>
+  </table>
+</div>
+
+<div style="margin-top:24px;text-align:center;">
+  <a href="{{ frontend_url }}/browse" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">Start browsing →</a>
+</div>
+
+<div style="margin-top:24px;background:#FFFFFF;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;padding:16px 20px;">
+  <p style="margin:0 0 4px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">ARE YOU AN IMPORTER?</p>
+  <p style="margin:0;font-size:13px;color:#5F5E5A;line-height:1.5;">List your imported cars on Wared and reach thousands of Saudi buyers. <a href="{{ frontend_url }}/become-dealer" style="color:#1A1714;font-weight:500;text-decoration:underline;">Apply here</a>.</p>
+</div>
+{% endblock %}

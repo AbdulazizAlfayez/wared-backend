@@ -1,0 +1,56 @@
+{% extends "emails/orders/base.html" %}
+{% block subject %}Your Car Is On Its Way — {{ order_number }}{% endblock %}
+{% block content %}
+  <div style="text-align:center;margin:0 0 24px;">
+    <span style="display:inline-block;padding:6px 20px;background:#e0f2fe;color:#0c4a6e;
+                 font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      SHIPPED
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#023e8a;text-align:center;">
+    Your car is on its way!
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    Hi {{ buyer_name }}, your {{ car_year }} {{ car_make }} {{ car_model }} has been loaded
+    and is now at sea, heading to Saudi Arabia.
+  </p>
+
+  <!-- Shipping details card -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;margin:0 0 28px;">
+    <tr>
+      <td style="padding:20px 24px;">
+        <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Order</p>
+        <p style="margin:0 0 12px;font-size:18px;font-weight:bold;color:#023e8a;">{{ order_number }}</p>
+
+        <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Vehicle</p>
+        <p style="margin:0 0 12px;font-size:16px;font-weight:bold;color:#0e7490;">
+          {{ car_year }} {{ car_make }} {{ car_model }}
+        </p>
+
+        {% if vessel_name %}
+        <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Vessel / Ship Name</p>
+        <p style="margin:0 0 12px;font-size:15px;color:#334155;">{{ vessel_name }}</p>
+        {% endif %}
+
+        {% if estimated_arrival %}
+        <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Estimated Arrival</p>
+        <p style="margin:0;font-size:15px;font-weight:bold;color:#0e7490;">{{ estimated_arrival }}</p>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <div style="text-align:center;">
+    <a href="{{ order_url }}"
+       style="display:inline-block;padding:14px 36px;background:#00B4D8;color:#ffffff;
+              font-size:16px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      Track Your Shipment →
+    </a>
+  </div>
+
+  <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;text-align:center;">
+    You will receive another notification when your vehicle arrives at the port.
+  </p>
+{% endblock %}

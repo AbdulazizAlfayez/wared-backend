@@ -1,0 +1,22 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}مطلوب تعديل · Changes Requested — WARED{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 8px;font-size:28px;font-weight:500;color:#1A1714;">مطلوب تعديل على إعلانك</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">مرحباً {{ name }}،</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:#5F5E5A;">
+  إعلانك <strong>{{ make }} {{ model }} {{ year }}</strong> يحتاج بعض التعديلات قبل النشر.
+</p>
+{% if admin_note %}
+<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:16px;margin:0 0 24px;">
+  <p style="margin:0;font-size:13px;color:#F57F17;font-weight:600;">ملاحظة المراجع / Reviewer's note:</p>
+  <p style="margin:8px 0 0;font-size:14px;color:#5F5E5A;">{{ admin_note }}</p>
+</div>
+{% endif %}
+<p style="margin:0 0 24px;font-size:13px;color:#888;">
+  Your listing for {{ make }} {{ model }} {{ year }} needs some changes before it can be published.
+  {% if admin_note %}Note: {{ admin_note }}{% endif %}
+</p>
+<div style="text-align:center;margin:24px 0;">
+  <a href="{{ frontend_url }}/listing/edit/{{ listing_id }}" style="display:inline-block;padding:14px 28px;background:#1A1714;color:#FAFAF7;text-decoration:none;border-radius:10px;font-size:14px;font-weight:500;">عدّل الإعلان / Edit listing →</a>
+</div>
+{% endblock %}

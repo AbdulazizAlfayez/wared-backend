@@ -1,0 +1,81 @@
+{% extends "emails/base.html" %}
+{% block subject %}Bulk upload complete — WARED{% endblock %}
+{% block content %}
+  <!-- Status badge -->
+  <div style="text-align:center;margin:0 0 24px;">
+    {% if failed == 0 %}
+    <span style="display:inline-block;padding:6px 20px;background:#dcfce7;color:#166534;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      ✅ UPLOAD COMPLETE
+    </span>
+    {% else %}
+    <span style="display:inline-block;padding:6px 20px;background:#fef9c3;color:#854d0e;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      ⚠️ UPLOAD COMPLETE WITH ERRORS
+    </span>
+    {% endif %}
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#1a3c5e;text-align:center;">
+    Your bulk upload has finished
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    Hi {{ dealer.name }}, here is a summary of your upload: <strong>{{ bulk.file_name }}</strong>
+  </p>
+
+  <!-- Stats card -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 28px;">
+    <tr>
+      <td style="padding:20px 24px;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding:8px 0;font-size:14px;color:#475569;">Total rows processed</td>
+            <td style="padding:8px 0;font-size:14px;font-weight:bold;color:#1a3c5e;text-align:right;">{{ total }}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;font-size:14px;color:#475569;">&#x2705; Listings created</td>
+            <td style="padding:8px 0;font-size:14px;font-weight:bold;color:#166534;text-align:right;">{{ successful }}</td>
+          </tr>
+          {% if failed > 0 %}
+          <tr>
+            <td style="padding:8px 0;font-size:14px;color:#475569;">&#x274c; Rows failed</td>
+            <td style="padding:8px 0;font-size:14px;font-weight:bold;color:#b91c1c;text-align:right;">{{ failed }}</td>
+          </tr>
+          {% endif %}
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  {% if bulk.errors %}
+  <p style="margin:0 0 12px;font-size:14px;font-weight:bold;color:#1a3c5e;">Error details</p>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;margin:0 0 28px;">
+    <tr>
+      <td style="padding:16px 20px;">
+        {% for err in bulk.errors|slice:":10" %}
+        <p style="margin:0 0 6px;font-size:13px;color:#991b1b;">
+          <strong>Row {{ err.row }}:</strong> {{ err.errors|join:", " }}
+        </p>
+        {% endfor %}
+        {% if bulk.errors|length > 10 %}
+        <p style="margin:6px 0 0;font-size:13px;color:#991b1b;">
+          … and {{ bulk.errors|length|add:"-10" }} more errors. Log in to view the full report.
+        </p>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+  {% endif %}
+
+  <p style="margin:0 0 24px;font-size:14px;color:#475569;text-align:center;line-height:1.6;">
+    All successfully created listings are in <strong>Draft</strong> status.<br>
+    Review and submit them for approval from your dashboard.
+  </p>
+
+  <div style="text-align:center;">
+    <a href="{{ frontend_url }}/dashboard/listings"
+       style="display:inline-block;padding:14px 36px;background:#2d6a4f;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      Go to My Listings →
+    </a>
+  </div>
+{% endblock %}

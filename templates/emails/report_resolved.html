@@ -1,0 +1,27 @@
+{% extends "emails/base.html" %}
+{% block subject %}Your report has been reviewed — WARED{% endblock %}
+{% block content %}
+<h2 style="margin:0 0 16px;font-size:22px;color:#1e293b;">Report Update</h2>
+<p style="margin:0 0 12px;font-size:15px;color:#475569;line-height:1.6;">
+  Hi <strong>{{ user.name }}</strong>,
+</p>
+<p style="margin:0 0 16px;font-size:15px;color:#475569;line-height:1.6;">
+  Our team has reviewed your report #{{ report.id }} and taken the following action:
+</p>
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f8fafc;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+  <tr>
+    <td style="font-size:13px;color:#64748b;padding:4px 0;"><strong>Status:</strong></td>
+    <td style="font-size:13px;color:#1e293b;padding:4px 0;">{{ status_display }}</td>
+  </tr>
+  <tr>
+    <td style="font-size:13px;color:#64748b;padding:4px 0;"><strong>Action Taken:</strong></td>
+    <td style="font-size:13px;color:#1e293b;padding:4px 0;">{{ action_taken_display }}</td>
+  </tr>
+</table>
+
+<p style="margin:0 0 12px;font-size:14px;color:#64748b;line-height:1.6;">
+  Thank you for helping keep our community safe and trustworthy. If you have further concerns,
+  you can submit a new report from any listing or user profile.
+</p>
+{% endblock %}

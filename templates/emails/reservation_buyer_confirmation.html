@@ -1,0 +1,39 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}تم حجز سيارتك · Reservation Confirmed — WARED{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 8px;font-size:28px;font-weight:500;letter-spacing:-0.5px;line-height:1.1;color:#1A1714;">تم تأكيد حجزك</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">مرحباً {{ name }}،</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:#5F5E5A;">
+  تم حجز <strong>{{ car_title }}</strong> بنجاح. رقم الحجز: <strong>{{ reservation_number }}</strong>.
+</p>
+
+<table style="width:100%;border-collapse:collapse;margin:0 0 24px;">
+  <tr>
+    <td style="padding:10px 0;border-bottom:1px solid #eee;color:#888;font-size:13px;">السيارة / Car</td>
+    <td style="padding:10px 0;border-bottom:1px solid #eee;font-size:14px;font-weight:500;text-align:right;">{{ car_title }}</td>
+  </tr>
+  <tr>
+    <td style="padding:10px 0;border-bottom:1px solid #eee;color:#888;font-size:13px;">المستورد / Importer</td>
+    <td style="padding:10px 0;border-bottom:1px solid #eee;font-size:14px;font-weight:500;text-align:right;">{{ importer_name }}</td>
+  </tr>
+  <tr>
+    <td style="padding:10px 0;border-bottom:1px solid #eee;color:#888;font-size:13px;">رسوم الحجز / Fee</td>
+    <td style="padding:10px 0;border-bottom:1px solid #eee;font-size:14px;font-weight:500;text-align:right;">SAR 99 (غير قابلة للاسترداد / non-refundable)</td>
+  </tr>
+  <tr>
+    <td style="padding:10px 0;color:#888;font-size:13px;">رقم الحجز / Ref</td>
+    <td style="padding:10px 0;font-size:14px;font-weight:500;text-align:right;">{{ reservation_number }}</td>
+  </tr>
+</table>
+
+<p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#5F5E5A;">
+  <strong>وش يصير الحين؟</strong> المستورد يراجع حجزك ويقرر القبول أو الرفض. نبلّغك أول ما يرد.
+</p>
+<p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#888;">
+  What happens next? The importer will review your reservation. We'll notify you as soon as they respond.
+</p>
+
+<div style="text-align:center;margin:24px 0;">
+  <a href="{{ frontend_url }}/orders" style="display:inline-block;padding:14px 28px;background:#1A1714;color:#FAFAF7;text-decoration:none;border-radius:10px;font-size:14px;font-weight:500;">تابع طلبك / Track your order →</a>
+</div>
+{% endblock %}

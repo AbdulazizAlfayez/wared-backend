@@ -1,0 +1,24 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}Your listing is live · {{ year }} {{ make }} {{ model }}{% endblock %}
+{% block content %}
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">LISTING APPROVED</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">Your listing is live.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">Your {{ year }} {{ make }} {{ model }} is now visible to buyers across Saudi Arabia. Expect inquiries within hours.</p>
+
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td><p style="margin:0;font-size:18px;font-weight:500;color:#1A1714;">{{ year }} {{ make }} {{ model }}</p><p style="margin:4px 0 0;font-size:13px;color:#888780;">{{ spec_line|default:"" }}</p></td>
+      <td style="text-align:right;vertical-align:top;"><p style="margin:0;font-size:18px;font-weight:500;color:#1A1714;">SAR {{ price|floatformat:0 }}</p></td>
+    </tr>
+  </table>
+</div>
+
+<div style="margin-top:24px;text-align:center;">
+  <a href="{{ frontend_url }}/car/{{ listing_id }}" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">View your listing →</a>
+</div>
+<p style="margin:12px 0 0;font-size:12px;color:#888780;text-align:center;">Buyers can now reserve this car. We'll notify you when an order arrives.</p>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}Your import is ready to start · pay deposit{% endblock %}
+{% block content %}
+<!-- Status pill -->
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">CONFIRMED · DEPOSIT DUE</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">Your car is ready to be sourced.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">{{ importer_business_name }} has confirmed your order. Pay your deposit to lock in the price and begin the import.</p>
+
+<!-- Car summary -->
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td><p style="margin:0;font-size:18px;font-weight:500;color:#1A1714;">{{ year }} {{ make }} {{ model }}</p><p style="margin:4px 0 0;font-size:13px;color:#888780;">{{ car_spec_line }}</p></td>
+      <td style="text-align:right;vertical-align:top;"><p style="margin:0;font-size:13px;color:#888780;font-family:monospace;">{{ order_number }}</p></td>
+    </tr>
+  </table>
+</div>
+
+<!-- MONEY BLOCK -->
+<div style="margin-top:24px;background:#1A1714;border-radius:8px;padding:24px;text-align:center;">
+  <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#B4B2A9;">DEPOSIT DUE NOW</p>
+  <p style="margin:0;font-size:38px;font-weight:500;letter-spacing:-1px;line-height:1;color:#FFFFFF;">SAR {{ deposit_amount }}</p>
+  <p style="margin:8px 0 20px;font-size:13px;color:#B4B2A9;">20% of total · Balance of SAR {{ remaining_balance }} due on delivery</p>
+  <a href="{{ payment_url }}" style="display:inline-block;padding:14px 36px;background:#FFFFFF;color:#1A1714;font-size:15px;font-weight:500;text-decoration:none;border-radius:8px;">Pay deposit now →</a>
+  <p style="margin:12px 0 0;font-size:11px;letter-spacing:0.3px;color:#B4B2A9;">MADA · VISA · MASTERCARD · APPLE PAY · STC PAY</p>
+</div>
+
+<!-- THE JOURNEY AHEAD -->
+<div style="padding-top:24px;margin-top:24px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 16px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">THE JOURNEY AHEAD</p>
+
+  <!-- Step 1 (current) -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;">
+    <tr>
+      <td style="width:28px;vertical-align:top;padding-top:2px;"><div style="width:20px;height:20px;border-radius:50%;background:#1A1714;color:#FFFFFF;font-size:11px;font-weight:500;text-align:center;line-height:20px;">1</div></td>
+      <td><p style="margin:0;font-size:14px;font-weight:500;color:#1A1714;">Pay your deposit</p><p style="margin:2px 0 0;font-size:12px;color:#888780;">Today · held in secure escrow</p></td>
+    </tr>
+  </table>
+  <!-- Step 2 -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;">
+    <tr>
+      <td style="width:28px;vertical-align:top;padding-top:2px;"><div style="width:20px;height:20px;border-radius:50%;border:1.5px solid #888780;color:#888780;font-size:11px;font-weight:500;text-align:center;line-height:18px;">2</div></td>
+      <td><p style="margin:0;font-size:14px;color:#5F5E5A;">Importer sources your car</p><p style="margin:2px 0 0;font-size:12px;color:#888780;">2–3 days · from {{ auction_source_display }}</p></td>
+    </tr>
+  </table>
+  <!-- Step 3 -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;">
+    <tr>
+      <td style="width:28px;vertical-align:top;padding-top:2px;"><div style="width:20px;height:20px;border-radius:50%;border:1.5px solid #888780;color:#888780;font-size:11px;font-weight:500;text-align:center;line-height:18px;">3</div></td>
+      <td><p style="margin:0;font-size:14px;color:#5F5E5A;">Ships from {{ source_country_display }}</p><p style="margin:2px 0 0;font-size:12px;color:#888780;">~14 days at sea</p></td>
+    </tr>
+  </table>
+  <!-- Step 4 -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;">
+    <tr>
+      <td style="width:28px;vertical-align:top;padding-top:2px;"><div style="width:20px;height:20px;border-radius:50%;border:1.5px solid #888780;color:#888780;font-size:11px;font-weight:500;text-align:center;line-height:18px;">4</div></td>
+      <td><p style="margin:0;font-size:14px;color:#5F5E5A;">Customs & SASO inspection</p><p style="margin:2px 0 0;font-size:12px;color:#888780;">5–7 days at {{ port_of_entry_display }}</p></td>
+    </tr>
+  </table>
+  <!-- Step 5 -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:4px;">
+    <tr>
+      <td style="width:28px;vertical-align:top;padding-top:2px;"><div style="width:20px;height:20px;border-radius:50%;border:1.5px solid #888780;color:#888780;font-size:11px;font-weight:500;text-align:center;line-height:18px;">5</div></td>
+      <td><p style="margin:0;font-size:14px;color:#5F5E5A;">Delivered to you</p><p style="margin:2px 0 0;font-size:12px;color:#888780;">Expected {{ estimated_delivery_date }}</p></td>
+    </tr>
+  </table>
+</div>
+
+<p style="margin:20px 0 0;font-size:13px;color:#888780;">You'll be notified at every step. Track your car anytime from your dashboard.</p>
+{% endblock %}

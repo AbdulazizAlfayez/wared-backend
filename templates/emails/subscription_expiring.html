@@ -1,0 +1,33 @@
+{% extends "emails/base.html" %}
+{% block subject %}Your {{ plan_name }} plan expires in {{ days }} day{{ days|pluralize }}{% endblock %}
+{% block content %}
+  <div style="text-align:center;margin:0 0 24px;">
+    <span style="display:inline-block;padding:6px 20px;background:#fef9c3;color:#854d0e;font-size:13px;font-weight:bold;border-radius:100px;letter-spacing:0.5px;">
+      ⏰ EXPIRING SOON
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 12px;font-size:24px;font-weight:bold;color:#1a3c5e;text-align:center;">
+    Renew Before It Expires
+  </h1>
+  <p style="margin:0 0 28px;font-size:15px;color:#475569;text-align:center;line-height:1.6;">
+    Hi {{ user_name }}, your <strong>{{ plan_name }}</strong> subscription expires on
+    <strong>{{ expires_at }}</strong> — that's in {{ days }} day{{ days|pluralize }}.
+  </p>
+
+  <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:20px 24px;margin:0 0 24px;text-align:center;">
+    <p style="margin:0 0 8px;font-size:15px;font-weight:bold;color:#c2410c;">Don't lose access to your premium features!</p>
+    <p style="margin:0 0 16px;font-size:14px;color:#ea580c;">Renew now to keep your listings, analytics, and showroom active.</p>
+    <a href="{{ frontend_url }}/dashboard/subscription"
+       style="display:inline-block;padding:12px 32px;background:#ea580c;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      Renew Now →
+    </a>
+  </div>
+
+  <div style="text-align:center;">
+    <a href="{{ frontend_url }}/subscription-plans"
+       style="display:inline-block;padding:12px 28px;background:#f1f5f9;color:#475569;font-size:14px;font-weight:bold;text-decoration:none;border-radius:8px;">
+      View Plans
+    </a>
+  </div>
+{% endblock %}

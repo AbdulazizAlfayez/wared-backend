@@ -1,0 +1,72 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}{{ subject_line }}{% endblock %}
+{% block content %}
+<!-- Status pill -->
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">MILESTONE {{ milestone_number }} OF 6 · {{ milestone_label }}</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">{{ headline }}</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">{{ intro_paragraph }}</p>
+
+<!-- DETAILS -->
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 12px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">DETAILS</p>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;">
+    {% for row in detail_rows %}
+    <tr>
+      <td style="padding:8px 0;color:#888780;{% if not forloop.first %}border-top:0.5px solid rgba(0,0,0,0.06);{% endif %}">{{ row.label }}</td>
+      <td style="padding:8px 0;text-align:right;color:#1A1714;{% if row.mono %}font-family:monospace;{% endif %}{% if not forloop.first %}border-top:0.5px solid rgba(0,0,0,0.06);{% endif %}">{{ row.value }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<!-- PROGRESS TIMELINE -->
+<div style="padding-top:24px;margin-top:24px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 16px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">PROGRESS</p>
+
+  {% for step in progress_steps %}
+  {% if step.state == "current" %}
+  <!-- Current step — dark highlight -->
+  <div style="background:#1A1714;border-radius:6px;padding:10px 12px;margin-bottom:6px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="width:26px;vertical-align:middle;"><div style="width:18px;height:18px;border-radius:50%;background:#FFFFFF;text-align:center;"><div style="width:6px;height:6px;border-radius:50%;background:#1A1714;margin:6px auto;"></div></div></td>
+        <td style="vertical-align:middle;"><span style="font-size:13px;font-weight:500;color:#FFFFFF;">{{ step.label }} · now</span></td>
+        <td style="text-align:right;vertical-align:middle;"><span style="font-size:12px;color:#B4B2A9;">{{ step.date }}</span></td>
+      </tr>
+    </table>
+  </div>
+  {% elif step.state == "completed" %}
+  <!-- Completed step -->
+  <div style="padding:8px 12px;margin-bottom:4px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="width:26px;vertical-align:middle;"><div style="width:18px;height:18px;border-radius:50%;background:#1A1714;color:#FFFFFF;font-size:11px;text-align:center;line-height:18px;">✓</div></td>
+        <td style="vertical-align:middle;"><span style="font-size:13px;color:#1A1714;">{{ step.label }}</span></td>
+        <td style="text-align:right;vertical-align:middle;"><span style="font-size:12px;color:#888780;">{{ step.date }}</span></td>
+      </tr>
+    </table>
+  </div>
+  {% else %}
+  <!-- Upcoming step -->
+  <div style="padding:8px 12px;margin-bottom:4px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="width:26px;vertical-align:middle;"><div style="width:18px;height:18px;border-radius:50%;border:1.5px solid #888780;"></div></td>
+        <td style="vertical-align:middle;"><span style="font-size:13px;color:#888780;">{{ step.label }}</span></td>
+        <td style="text-align:right;vertical-align:middle;"><span style="font-size:12px;color:#888780;">{{ step.date }}</span></td>
+      </tr>
+    </table>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<!-- CTA -->
+<div style="margin-top:24px;text-align:center;">
+  <a href="{{ cta_url }}" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">{{ cta_label }}</a>
+</div>
+<p style="margin:12px 0 0;font-size:13px;color:#888780;text-align:center;">{{ caption }}</p>
+{% endblock %}

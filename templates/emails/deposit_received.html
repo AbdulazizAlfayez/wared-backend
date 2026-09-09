@@ -1,0 +1,45 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}Deposit received · sourcing your car has begun{% endblock %}
+{% block content %}
+<!-- Status pill -->
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">PAYMENT RECEIVED</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">The sourcing has begun.</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">We received your deposit. {{ importer_business_name }} is now sourcing your car from {{ source_country_display }}. You'll get a notification at every milestone.</p>
+
+<!-- PAYMENT RECEIPT -->
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 12px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">PAYMENT RECEIPT</p>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;">
+    <tr><td style="padding:8px 0;color:#888780;">Transaction ID</td><td style="padding:8px 0;text-align:right;color:#1A1714;font-family:monospace;">{{ transaction_id }}</td></tr>
+    <tr><td style="padding:8px 0;color:#888780;border-top:0.5px solid rgba(0,0,0,0.06);">Method</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">{{ payment_method_display }}</td></tr>
+    <tr><td style="padding:8px 0;color:#888780;border-top:0.5px solid rgba(0,0,0,0.06);">Date</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">{{ payment_date }}</td></tr>
+    <tr><td style="padding:10px 0;font-weight:500;color:#1A1714;border-top:1px solid rgba(0,0,0,0.12);">Amount paid</td><td style="padding:10px 0;text-align:right;font-weight:500;color:#1A1714;border-top:1px solid rgba(0,0,0,0.12);">SAR {{ deposit_amount }}</td></tr>
+  </table>
+</div>
+
+<!-- BALANCE SUMMARY -->
+<div style="padding-top:20px;margin-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 12px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">BALANCE SUMMARY</p>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;">
+    <tr><td style="padding:8px 0;color:#5F5E5A;">Final price</td><td style="padding:8px 0;text-align:right;color:#1A1714;">SAR {{ final_price }}</td></tr>
+    <tr><td style="padding:8px 0;color:#5F5E5A;border-top:0.5px solid rgba(0,0,0,0.06);">Paid today</td><td style="padding:8px 0;text-align:right;color:#1A1714;border-top:0.5px solid rgba(0,0,0,0.06);">- SAR {{ deposit_amount }}</td></tr>
+    <tr><td style="padding:10px 0;font-weight:500;color:#1A1714;border-top:1px solid rgba(0,0,0,0.12);">Due on delivery</td><td style="padding:10px 0;text-align:right;font-weight:500;color:#1A1714;border-top:1px solid rgba(0,0,0,0.12);">SAR {{ remaining_balance }}</td></tr>
+  </table>
+</div>
+
+<!-- WHAT'S HAPPENING NOW -->
+<div style="margin-top:24px;background:#FFFFFF;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;padding:20px;">
+  <p style="margin:0 0 8px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">WHAT'S HAPPENING NOW</p>
+  <p style="margin:0;font-size:14px;line-height:1.6;color:#5F5E5A;">{{ importer_business_name }} is reviewing available cars at the {{ auction_source_display }}. We'll notify you as soon as your {{ model }} is purchased — usually within 2–3 days.</p>
+  <p style="margin:12px 0 0;font-size:12px;color:#888780;">Your deposit is held in secure escrow until the car is in your hands.</p>
+</div>
+
+<!-- CTA -->
+<div style="margin-top:24px;text-align:center;">
+  <a href="{{ frontend_url }}/orders/{{ order_id }}" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">Track your order →</a>
+</div>
+<p style="margin:12px 0 0;font-size:13px;color:#888780;text-align:center;">Keep this receipt for your records.</p>
+{% endblock %}

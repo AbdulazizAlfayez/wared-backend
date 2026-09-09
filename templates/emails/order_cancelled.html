@@ -1,0 +1,63 @@
+{% extends "emails/markabah_base.html" %}
+{% block subject %}{% if recipient_role == "buyer" %}Order cancelled · refund on the way{% else %}Order {{ order_number }} cancelled by buyer{% endif %}{% endblock %}
+{% block content %}
+<!-- Status pill -->
+<div style="margin:0 0 20px;">
+  <span style="display:inline-block;padding:5px 11px;border-radius:100px;border:0.5px solid #2C2C2A;font-size:11px;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;color:#2C2C2A;">{% if recipient_role == "buyer" %}ORDER CANCELLED · REFUND ISSUED{% else %}ORDER CANCELLED{% endif %}</span>
+</div>
+
+<h1 style="margin:0 0 8px;font-size:32px;font-weight:500;letter-spacing:-0.8px;line-height:1.1;color:#1A1714;">{% if recipient_role == "buyer" %}Your order has been cancelled.{% else %}An order was cancelled.{% endif %}</h1>
+<p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5F5E5A;">{% if recipient_role == "buyer" %}As requested, your order for the {{ year }} {{ make }} {{ model }} has been cancelled. Your full deposit will be returned to your original payment method.{% else %}The buyer cancelled order {{ order_number }} on {{ cancelled_at }}. The deposit has been refunded. The car listing remains active.{% endif %}</p>
+
+<!-- ORDER INFO -->
+<div style="padding-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 4px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">ORDER</p>
+  <p style="margin:0 0 2px;font-size:14px;color:#1A1714;font-family:monospace;">{{ order_number }}</p>
+  <p style="margin:0 0 2px;font-size:14px;color:#5F5E5A;">{{ year }} {{ make }} {{ model }}</p>
+  <p style="margin:0;font-size:13px;color:#888780;">Cancelled {{ cancelled_at }}</p>
+</div>
+
+<!-- REASON -->
+{% if cancellation_reason %}
+<div style="padding-top:20px;margin-top:20px;border-top:0.5px solid rgba(0,0,0,0.12);">
+  <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">REASON GIVEN</p>
+  <div style="background:#FFFFFF;border-left:2px solid #1A1714;padding:12px 14px;">
+    <p style="margin:0;font-size:14px;color:#5F5E5A;font-style:italic;">"{{ cancellation_reason }}"</p>
+  </div>
+</div>
+{% endif %}
+
+<!-- MONEY BLOCK -->
+<div style="margin-top:24px;background:#1A1714;border-radius:8px;padding:24px;">
+  <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#B4B2A9;">{% if recipient_role == "buyer" %}REFUND AMOUNT{% else %}DEPOSIT REFUNDED{% endif %}</p>
+  <p style="margin:0;font-size:38px;font-weight:500;letter-spacing:-1px;line-height:1;color:#FFFFFF;">SAR {{ deposit_amount }}</p>
+  {% if recipient_role == "buyer" %}
+  <p style="margin:8px 0 0;font-size:13px;color:#B4B2A9;">Returning to {{ payment_method_display }}</p>
+  {% endif %}
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:13px;margin-top:16px;">
+    <tr><td style="padding:6px 0;color:#B4B2A9;">Status</td><td style="padding:6px 0;text-align:right;color:#FFFFFF;">Processing</td></tr>
+    <tr><td style="padding:6px 0;color:#B4B2A9;border-top:0.5px solid rgba(255,255,255,0.12);">Initiated</td><td style="padding:6px 0;text-align:right;color:#FFFFFF;border-top:0.5px solid rgba(255,255,255,0.12);">{{ refund_initiated_date }}</td></tr>
+    <tr><td style="padding:6px 0;color:#B4B2A9;border-top:0.5px solid rgba(255,255,255,0.12);">Arrives by</td><td style="padding:6px 0;text-align:right;color:#FFFFFF;border-top:0.5px solid rgba(255,255,255,0.12);">{{ refund_arrives_by_date }}</td></tr>
+  </table>
+</div>
+
+{% if recipient_role == "buyer" %}
+<!-- WHAT HAPPENS TO THE CAR -->
+<div style="margin-top:24px;background:#FFFFFF;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;padding:20px;">
+  <p style="margin:0 0 8px;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:#888780;">WHAT HAPPENS TO THE CAR</p>
+  <p style="margin:0;font-size:14px;line-height:1.6;color:#5F5E5A;">The car will be released for other buyers. If you change your mind, you can place a new order — but availability is not guaranteed.</p>
+</div>
+{% endif %}
+
+<!-- CTA -->
+<div style="margin-top:24px;text-align:center;">
+  {% if recipient_role == "buyer" %}
+  <a href="{{ frontend_url }}/browse" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">Browse more imported cars →</a>
+  {% else %}
+  <a href="{{ frontend_url }}/listings/{{ car_id }}" style="display:inline-block;padding:14px 36px;background:#1A1714;color:#FFFFFF;font-size:14px;font-weight:500;text-decoration:none;border-radius:8px;">View listing →</a>
+  {% endif %}
+</div>
+{% if recipient_role == "buyer" %}
+<p style="margin:12px 0 0;font-size:13px;color:#888780;text-align:center;">Questions about your refund? Reply to this email and we'll respond within 24 hours.</p>
+{% endif %}
+{% endblock %}
