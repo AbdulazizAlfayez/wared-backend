@@ -487,6 +487,16 @@ class ListingViewSet(viewsets.ModelViewSet):
                 ).select_related('package'),
                 to_attr='active_promotions_prefetched',
             ),
+        ).annotate(
+            # Social counts, annotated on `base` so all four branches below
+            # inherit them. distinct=True on both: the two LEFT JOINs would
+            # otherwise multiply each other's rows.
+            like_total=Count('likes', distinct=True),
+            comment_total=Count(
+                'comments',
+                filter=Q(comments__is_deleted=False, comments__is_hidden=False),
+                distinct=True,
+            ),
         )
 
         # Off-market rules for public browse — see cars/visibility.py
