@@ -43,6 +43,51 @@ class BilingualMixin:
 
 
 # ---------------------------------------------------------------------------
+# Social counts mixin (likes & comments)
+# ---------------------------------------------------------------------------
+
+class SocialCountsMixin:
+    """
+    Shared by ListingSerializer and ListingListSerializer so the detail and
+    list shapes cannot drift apart.
+
+    Each count prefers the annotation added by ListingViewSet.get_queryset()
+    and falls back to a per-row query. The fallback matters: several endpoints
+    (e.g. /api/listings/my/, favorites, the importer dashboard) build their own
+    queryset and would otherwise raise. Those paths pay one query per row.
+    """
+
+    def get_like_count(self, obj):
+        annotated = getattr(obj, 'like_total', None)
+        return annotated if annotated is not None else obj.likes.count()
+
+    def get_comment_count(self, obj):
+        annotated = getattr(obj, 'comment_total', None)
+        if annotated is not None:
+            return annotated
+        return obj.comments.filter(is_deleted=False, is_hidden=False).count()
+
+    def get_is_liked(self, obj):
+        """
+        False — not None — for anonymous callers: this is a boolean the client
+        binds to a filled/outline heart, so it must never be null. (The older
+        `is_favorited_by_me` returns None instead; the two are deliberately
+        different here.)
+        """
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        # One query for the whole page, mirroring the favorites approach.
+        if not hasattr(self, '_liked_ids'):
+            from social.models import ListingLike
+            self._liked_ids = set(
+                ListingLike.objects.filter(user=request.user)
+                .values_list('listing_id', flat=True)
+            )
+        return obj.id in self._liked_ids
+
+
+# ---------------------------------------------------------------------------
 # Listing Images
 # ---------------------------------------------------------------------------
 
@@ -93,7 +138,7 @@ class CostBreakdownSerializer(serializers.Serializer):
         return obj.calculate_total_landed_cost()
 
 
-class ListingSerializer(BilingualMixin, serializers.ModelSerializer):
+class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSerializer):
     """Serializer for Listing (api/listings). Includes nested images and primary_image URL."""
 
     owner_id = serializers.IntegerField(source='owner.id', read_only=True)
@@ -127,6 +172,11 @@ class ListingSerializer(BilingualMixin, serializers.ModelSerializer):
 
     # Favorites (Phase M8)
     is_favorited_by_me = serializers.SerializerMethodField(read_only=True)
+
+    # Social (likes & comments) — see SocialCountsMixin
+    like_count    = serializers.SerializerMethodField(read_only=True)
+    comment_count = serializers.SerializerMethodField(read_only=True)
+    is_liked      = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Listing
@@ -184,6 +234,8 @@ class ListingSerializer(BilingualMixin, serializers.ModelSerializer):
             'has_frame_damage', 'damage_description',
             # Favorites
             'is_favorited_by_me',
+            # Social (likes & comments)
+            'like_count', 'comment_count', 'is_liked',
         )
         read_only_fields = (
             'id', 'owner_id', 'owner', 'is_active', 'approved_by', 'approved_at',
@@ -197,6 +249,7 @@ class ListingSerializer(BilingualMixin, serializers.ModelSerializer):
             'promotion_priority', 'is_promoted', 'active_promotion',
             'owner_verified', 'owner_verification_level',
             'cost_breakdown', 'is_favorited_by_me',
+            'like_count', 'comment_count', 'is_liked',
         )
 
     def get_owner(self, obj):
@@ -482,7 +535,7 @@ class ListingSerializer(BilingualMixin, serializers.ModelSerializer):
 # Listing List (lean — no full image array, just primary_image variants)
 # ---------------------------------------------------------------------------
 
-class ListingListSerializer(BilingualMixin, serializers.ModelSerializer):
+class ListingListSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSerializer):
     """
     Lean serializer for listing list endpoints.  Returns the primary image as
     {thumb, card} variants instead of the full image array — biggest payload
@@ -502,6 +555,11 @@ class ListingListSerializer(BilingualMixin, serializers.ModelSerializer):
     # Verification
     owner_verification_level = serializers.SerializerMethodField(read_only=True)
 
+    # Social (likes & comments) — see SocialCountsMixin
+    like_count    = serializers.SerializerMethodField(read_only=True)
+    comment_count = serializers.SerializerMethodField(read_only=True)
+    is_liked      = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Listing
         fields = (
@@ -514,6 +572,8 @@ class ListingListSerializer(BilingualMixin, serializers.ModelSerializer):
             'is_featured', 'is_highlighted', 'is_homepage',
             'is_promoted', 'owner_verification_level',
             'negotiable', 'created_at',
+            # Social (likes & comments)
+            'like_count', 'comment_count', 'is_liked',
         )
         read_only_fields = fields
 

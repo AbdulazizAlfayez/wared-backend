@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/', include('payments.urls')),
     path('api/assistant/', include('assistant.urls')),
     path('api/', include('appconfig.urls')),
+    path('api/', include('social.urls')),
     path('', include('source_countries.urls')),
     path('health/', lambda request: JsonResponse({
         'status': 'OK',
