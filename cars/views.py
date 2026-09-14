@@ -2808,29 +2808,53 @@ class ImportedCarListView(generics.ListAPIView):
         return qs
 
 
-class ImportedCarFilterOptionsView(APIView):
-    """GET /api/imported-cars/filter-options/ — available filter values."""
+class ListingFilterOptionsView(APIView):
+    """
+    GET /api/listings/filter-options/ — every value the Filters screen can
+    offer, with counts, computed from publicly visible listings only.
+
+    Cached for five minutes and busted whenever a Listing is saved or deleted
+    (`cars.signals`), so a newly approved car shows up without waiting out the
+    TTL.
+    """
+
     permission_classes = [AllowAny]
 
     def get(self, request):
-        qs = Listing.objects.filter(public_market_q()).distinct()
-        makes = sorted(set(qs.values_list('make', flat=True).distinct()))
-        body_types = sorted(set(qs.exclude(body_type='').values_list('body_type', flat=True).distinct()))
-        years = qs.aggregate(min_year=Min('year'), max_year=Max('year'))
-        prices = qs.exclude(final_price_sar__isnull=True).aggregate(
-            min_price=Min('final_price_sar'),
-            max_price=Max('final_price_sar'),
-        )
+        # Local import: `filter_options` pulls in `locations` and
+        # `source_countries`, and this module is imported from `cars.urls`.
+        from .filter_options import get_filter_options
+
+        return Response(get_filter_options())
+
+
+class ImportedCarFilterOptionsView(APIView):
+    """
+    GET /api/imported-cars/filter-options/ — the older, thinner shape.
+
+    Its response is unchanged — bare make and body-type lists sorted
+    alphabetically, and a price range over `final_price_sar` — but it is now
+    derived from the same facets as the richer endpoint, so the two cannot
+    drift apart. New clients should use /api/listings/filter-options/.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .filter_options import get_filter_options
+
+        options = get_filter_options()
+        final_price = options['final_price_sar']
         return Response({
-            'makes': [m for m in makes if m],
-            'body_types': [b for b in body_types if b],
+            'makes': sorted(m['value'] for m in options['makes']),
+            'body_types': sorted(b['value'] for b in options['body_type']),
             'year_range': {
-                'min': years.get('min_year') or 2018,
-                'max': years.get('max_year') or 2025,
+                'min': options['year']['min'] or 2018,
+                'max': options['year']['max'] or 2025,
             },
             'price_range_sar': {
-                'min': float(prices.get('min_price') or 0),
-                'max': float(prices.get('max_price') or 1000000),
+                'min': float(final_price['min'] or 0),
+                'max': float(final_price['max'] or 1000000),
             },
         })
 
