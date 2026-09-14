@@ -1,6 +1,57 @@
 import django_filters
 from django.db import models
+from django.db.models import Q
+
 from .models import Car, Listing, Showroom, Workshop
+
+
+def split_csv(value):
+    """`"a, b ,c"` -> `['a', 'b', 'c']`, dropping blanks."""
+    if value in (None, ''):
+        return []
+    return [part.strip() for part in str(value).split(',') if part.strip()]
+
+
+class MultiValueIContainsFilter(django_filters.CharFilter):
+    """
+    Comma-separated values, ORed, each matched as a case-insensitive substring.
+
+    A single value produces exactly the query the previous `icontains` filter
+    did, so `make=Toyota` is unchanged — including partial matches like
+    `make=Toy`, which an `iexact` rewrite would silently have broken.
+    `make=Toyota,Nissan` is Toyota OR Nissan.
+    """
+
+    def filter(self, qs, value):
+        values = split_csv(value)
+        if not values:
+            return qs
+        query = Q()
+        for item in values:
+            query |= Q(**{f'{self.field_name}__icontains': item})
+        return qs.filter(query)
+
+
+class MultiValueChoiceFilter(django_filters.CharFilter):
+    """
+    Comma-separated enum values, ORed through a single `__in`.
+
+    Values are lower-cased first. Every `Listing` choice constant is lower-case,
+    so this is case-insensitive in practice while still using the column's
+    index — which `iexact` would defeat, and there are indexes on `body_type`,
+    `fuel_type`, `transmission`, `drive_type` and `imported_from`.
+
+    Deliberately a `CharFilter` rather than a `ChoiceFilter`: a choice field
+    validates the whole parameter against its choices, so a comma-joined string
+    is rejected outright. An unrecognised value now simply matches nothing,
+    which is the right answer for an OR list.
+    """
+
+    def filter(self, qs, value):
+        values = [item.lower() for item in split_csv(value)]
+        if not values:
+            return qs
+        return qs.filter(**{f'{self.field_name}__in': values})
 
 
 class CarFilter(django_filters.FilterSet):
@@ -36,11 +87,11 @@ class CarFilter(django_filters.FilterSet):
 class ListingFilter(django_filters.FilterSet):
     """Filtering for Listing API. Admin can use is_active=false to see soft-deleted."""
 
-    # Existing range / icontains filters
-    make  = django_filters.CharFilter(field_name='make',  lookup_expr='icontains')
-    model = django_filters.CharFilter(field_name='model', lookup_expr='icontains')
-    city  = django_filters.CharFilter(field_name='city',  lookup_expr='icontains')
-    color = django_filters.CharFilter(field_name='color', lookup_expr='icontains')
+    # Categorical text filters — comma-separated, ORed, case-insensitive.
+    make  = MultiValueIContainsFilter(field_name='make')
+    model = MultiValueIContainsFilter(field_name='model')
+    city  = MultiValueIContainsFilter(field_name='city')
+    color = MultiValueIContainsFilter(field_name='color')
 
     year_min  = django_filters.NumberFilter(field_name='year',    lookup_expr='gte')
     year_max  = django_filters.NumberFilter(field_name='year',    lookup_expr='lte')
@@ -59,14 +110,14 @@ class ListingFilter(django_filters.FilterSet):
     doors_min       = django_filters.NumberFilter(field_name='doors',       lookup_expr='gte')
     doors_max       = django_filters.NumberFilter(field_name='doors',       lookup_expr='lte')
 
-    # Choice filters
-    status       = django_filters.ChoiceFilter(choices=Listing.STATUS_CHOICES)
-    body_type    = django_filters.ChoiceFilter(choices=Listing.BODY_TYPE_CHOICES)
-    drive_type   = django_filters.ChoiceFilter(choices=Listing.DRIVE_TYPE_CHOICES)
-    fuel_type    = django_filters.ChoiceFilter(choices=Listing.FUEL_TYPE_CHOICES)
-    transmission = django_filters.ChoiceFilter(choices=Listing.TRANSMISSION_CHOICES)
-    condition    = django_filters.ChoiceFilter(choices=Listing.CONDITION_CHOICES)
-    imported_from = django_filters.ChoiceFilter(choices=Listing.IMPORT_SOURCE_CHOICES)
+    # Choice filters — comma-separated, ORed.
+    status       = MultiValueChoiceFilter(field_name='status')
+    body_type    = MultiValueChoiceFilter(field_name='body_type')
+    drive_type   = MultiValueChoiceFilter(field_name='drive_type')
+    fuel_type    = MultiValueChoiceFilter(field_name='fuel_type')
+    transmission = MultiValueChoiceFilter(field_name='transmission')
+    condition    = MultiValueChoiceFilter(field_name='condition')
+    imported_from = MultiValueChoiceFilter(field_name='imported_from')
 
     # Exact numeric filters (year, mileage, seats, doors)
     year      = django_filters.NumberFilter(field_name='year',    lookup_expr='exact')
@@ -77,7 +128,7 @@ class ListingFilter(django_filters.FilterSet):
     doors     = django_filters.NumberFilter(field_name='doors',   lookup_expr='exact')
 
     # Additional text filters
-    color_interior = django_filters.CharFilter(field_name='color_interior', lookup_expr='icontains')
+    color_interior = MultiValueIContainsFilter(field_name='color_interior')
 
     # Boolean filters
     is_active          = django_filters.BooleanFilter(field_name='is_active')
@@ -105,11 +156,11 @@ class ListingFilter(django_filters.FilterSet):
     lng_max = django_filters.NumberFilter(field_name='longitude', lookup_expr='lte')
 
     # Import-specific filters
-    source_country    = django_filters.CharFilter(field_name='source_country', lookup_expr='exact')
-    import_status     = django_filters.CharFilter(field_name='import_status',  lookup_expr='exact')
-    spec_origin       = django_filters.CharFilter(field_name='spec_origin',    lookup_expr='exact')
-    port_of_entry     = django_filters.CharFilter(field_name='port_of_entry',  lookup_expr='exact')
-    auction_source    = django_filters.CharFilter(field_name='auction_source', lookup_expr='exact')
+    source_country    = MultiValueChoiceFilter(field_name='source_country')
+    import_status     = MultiValueChoiceFilter(field_name='import_status')
+    spec_origin       = MultiValueChoiceFilter(field_name='spec_origin')
+    port_of_entry     = MultiValueChoiceFilter(field_name='port_of_entry')
+    auction_source    = MultiValueChoiceFilter(field_name='auction_source')
     gcc_specs         = django_filters.BooleanFilter(field_name='gcc_specs')
     has_salvage_title = django_filters.BooleanFilter(field_name='has_salvage_title')
     has_flood_damage  = django_filters.BooleanFilter(field_name='has_flood_damage')
