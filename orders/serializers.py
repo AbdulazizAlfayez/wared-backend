@@ -127,6 +127,9 @@ class ImportOrderListSerializer(serializers.ModelSerializer):
     notes          = serializers.CharField(source='importer_notes', read_only=True)
     can_cancel     = serializers.SerializerMethodField()
     latest_event   = serializers.SerializerMethodField()
+    balance_due_sar        = serializers.SerializerMethodField()
+    can_exchange_contacts  = serializers.SerializerMethodField()
+    allowed_next_statuses  = serializers.SerializerMethodField()
 
     class Meta:
         model = ImportOrder
@@ -135,10 +138,15 @@ class ImportOrderListSerializer(serializers.ModelSerializer):
             'status', 'status_display',
             'reservation_fee', 'deposit_amount', 'deposit_paid',
             'total_price', 'payment_status',
+            'balance_due_sar', 'can_exchange_contacts', 'allowed_next_statuses',
             'estimated_delivery_date', 'actual_delivery_date',
             'notes', 'can_cancel',
             'latest_event', 'created_at', 'updated_at',
         ]
+
+    def get_allowed_next_statuses(self, obj):
+        """Lets the importer UI offer only transitions that will succeed."""
+        return obj.allowed_next_statuses()
 
     def get_status_display(self, obj):
         return obj.get_status_display()
@@ -162,11 +170,15 @@ class ImportOrderListSerializer(serializers.ModelSerializer):
 
     def get_payment_status(self, obj):
         """
-        Balance-payment lifecycle shown to both parties:
-        awaiting_payment → under_review (transfer submitted) → paid.
+        Balance-payment lifecycle: none → under_review (transfer submitted)
+        → paid, or rejected if the transfer was refused.
+
+        NOTE: these values replaced the previous
+        awaiting_payment/deposit_paid/refunded set. 'none' covers both
+        "nothing submitted yet" and "only the reservation fee is paid" — the
+        SAR 99 fee is WARED's revenue, not a payment toward the car, so it
+        never moves this field.
         """
-        if obj.status == 'refunded':
-            return 'refunded'
         try:
             from payments.models import PaymentTransaction
             balance = PaymentTransaction.objects.filter(
@@ -177,15 +189,33 @@ class ImportOrderListSerializer(serializers.ModelSerializer):
                     return 'paid'
                 if balance.status == 'pending':
                     return 'under_review'
+                if balance.status in ('failed', 'rejected'):
+                    return 'rejected'
         except Exception:
             pass
-        if obj.deposit_paid:
-            return 'deposit_paid'
-        return 'awaiting_payment'
+        return 'none'
+
+    def get_balance_due_sar(self, obj):
+        """
+        What the buyer still owes for the car.
+
+        This is the FULL total_price. The SAR 99 reservation fee is NOT
+        deducted: it is a non-refundable platform service fee and WARED's
+        revenue, not a deposit credited toward the car.
+        """
+        return float(obj.total_price or 0)
+
+    def get_can_exchange_contacts(self, obj):
+        """
+        Buyer and importer may swap phone/email only once the balance is
+        confirmed paid. Until then all contact goes through WARED's chat.
+        """
+        return _order_fully_paid(obj)
 
     def get_can_cancel(self, obj):
-        non_cancellable = obj.TERMINAL_STATUSES | {'delivered', 'completed'}
-        return obj.status not in non_cancellable
+        """Mirrors what the cancel endpoint will actually accept, so the UI
+        never shows a button that 400s."""
+        return 'cancelled' in obj.allowed_next_statuses()
 
     def get_latest_event(self, obj):
         event = (
@@ -421,23 +451,45 @@ class CreateOrderSerializer(serializers.Serializer):
 # Update order status
 # ---------------------------------------------------------------------------
 
+def default_cancellation_reason(user) -> str:
+    """
+    Fallback reason so the website's and mobile app's plain "Cancel" buttons —
+    which send no body — keep working. A supplied reason always wins.
+    """
+    role = getattr(user, 'role', '') or 'user'
+    if getattr(user, 'is_staff', False) or role == 'admin':
+        label = 'admin'
+    elif role == 'importer':
+        label = 'importer'
+    else:
+        label = 'buyer'
+    return f'Cancelled by {label}'
+
+
 class UpdateOrderStatusSerializer(serializers.Serializer):
     status                  = serializers.ChoiceField(choices=ImportOrder.STATUS_CHOICES)
     notes                   = serializers.CharField(required=False, allow_blank=True, default='')
     cancellation_reason     = serializers.CharField(required=False, allow_blank=True, default='')
     estimated_delivery_date = serializers.DateField(required=False, allow_null=True)
+    # Staff-only escape hatch for correcting a stuck order.
+    force                   = serializers.BooleanField(required=False, default=False)
 
     def validate(self, data):
-        order      = self.context['order']
+        order = self.context['order']
+        user = self.context.get('user')
         new_status = data['status']
-        try:
-            order.validate_status_transition(new_status)
-        except Exception as e:
-            raise serializers.ValidationError(str(e))
+
+        forced = bool(data.get('force')) and bool(self.context.get('can_force'))
+        if not forced:
+            try:
+                order.validate_status_transition(new_status)
+            except Exception as e:
+                raise serializers.ValidationError(str(e))
+
         if new_status == 'cancelled' and not data.get('cancellation_reason'):
-            raise serializers.ValidationError(
-                {"cancellation_reason": "Cancellation reason is required."}
-            )
+            data['cancellation_reason'] = default_cancellation_reason(user)
+
+        data['_forced'] = forced
         return data
 
 
@@ -496,19 +548,62 @@ class ReservationCarSerializer(serializers.ModelSerializer):
         return None
 
 
+#: Statuses in which a reservation is still live and can be acted on.
+OPEN_RESERVATION_STATUSES = ('pending_payment', 'pending_review')
+
+
 class ReservationListSerializer(serializers.ModelSerializer):
     car                = ReservationCarSerializer(read_only=True)
     status_display     = serializers.CharField(source='get_status_display', read_only=True)
     importer_name      = serializers.SerializerMethodField()
+    expires_at         = serializers.DateTimeField(read_only=True)
+    hours_remaining    = serializers.SerializerMethodField()
+    can_cancel         = serializers.SerializerMethodField()
+    can_pay            = serializers.SerializerMethodField()
+    # The SAR 99 fee is a non-refundable platform service fee and WARED's
+    # revenue — it is never credited toward the car price and never refunded.
+    fee_refundable     = serializers.SerializerMethodField()
 
     class Meta:
         model = Reservation
         fields = [
             'id', 'reservation_number', 'car', 'status', 'status_display',
-            'platform_fee_sar', 'payment_method', 'payment_status',
+            'platform_fee_sar', 'fee_refundable',
+            'payment_method', 'payment_status',
             'paid_at', 'cancelled_at', 'importer_name',
+            'expires_at', 'hours_remaining', 'can_cancel', 'can_pay',
             'created_at', 'updated_at',
         ]
+
+    def _request_user(self):
+        request = self.context.get('request')
+        if not request or not getattr(request, 'user', None):
+            return None
+        return request.user if request.user.is_authenticated else None
+
+    def get_fee_refundable(self, obj):
+        return False
+
+    def get_hours_remaining(self, obj):
+        """0 once the reservation is no longer awaiting a decision."""
+        if obj.status not in OPEN_RESERVATION_STATUSES:
+            return 0.0
+        return obj.hours_remaining
+
+    def get_can_cancel(self, obj):
+        user = self._request_user()
+        if user is None or obj.status not in OPEN_RESERVATION_STATUSES:
+            return False
+        is_party = obj.buyer_id == user.id or obj.importer_id == user.id
+        is_admin = user.is_staff or getattr(user, 'role', '') == 'admin'
+        return bool(is_party or is_admin)
+
+    def get_can_pay(self, obj):
+        """Only the buyer, only while payment is still outstanding."""
+        user = self._request_user()
+        if user is None or obj.buyer_id != user.id:
+            return False
+        return obj.status == 'pending_payment' and obj.payment_status != 'succeeded'
 
     def get_importer_name(self, obj):
         if obj.importer:
@@ -576,11 +671,23 @@ class CreateReservationSerializer(serializers.Serializer):
         car = getattr(self, '_car', None)
         if car and car.owner_id == request.user.id:
             raise serializers.ValidationError(_('You cannot reserve your own listing.'))
-        if Reservation.objects.filter(
+
+        # Car-wide, not per-buyer. A reservation sitting in pending_payment has
+        # not set car.is_reserved yet, so without this two different buyers
+        # could each open one on the same car and both pay the SAR 99 fee.
+        blocking = Reservation.objects.filter(
             car_id=data['car_id'],
-            buyer=request.user,
-            status__in=['pending_payment', 'active'],
-        ).exists():
-            raise serializers.ValidationError(_('You already have an active reservation for this car.'))
+            # 'active' is retained only for rows created before the
+            # pending_payment → pending_review split.
+            status__in=['pending_payment', 'pending_review', 'active'],
+        )
+        if blocking.filter(buyer=request.user).exists():
+            raise serializers.ValidationError(
+                _('You already have an active reservation for this car.')
+            )
+        if blocking.exists():
+            raise serializers.ValidationError(
+                _('This car is currently reserved.')
+            )
         data['_car'] = car
         return data

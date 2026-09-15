@@ -93,18 +93,34 @@ def _send_buyer_rejected_email(reservation, reason=''):
 
 
 def _create_reservation_conversation(reservation):
-    """Auto-create a conversation and system message when a car is reserved."""
+    """
+    Ensure a conversation exists for this reservation and post the system
+    message announcing it.
+
+    Idempotent: buyers can message an importer about a listing *before*
+    reserving it, so a Conversation for (listing, buyer) usually already
+    exists. Reuse it and just post the message — creating a second thread
+    would strand the earlier history.
+    """
     try:
         from messaging.models import Conversation, Message
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        conv, created = Conversation.objects.get_or_create(
+        conv = Conversation.objects.filter(
             listing=reservation.car,
             buyer=reservation.buyer,
-            seller=reservation.importer,
-            defaults={'reservation': reservation},
-        )
+        ).first()
+        if conv is None:
+            conv = Conversation.objects.create(
+                listing=reservation.car,
+                buyer=reservation.buyer,
+                seller=reservation.importer,
+                reservation=reservation,
+            )
+        elif conv.reservation_id is None:
+            conv.reservation = reservation
+            conv.save(update_fields=['reservation'])
         # Get or create a system user for system messages
         system_user, _ = User.objects.get_or_create(
             email='system@wared.sa',
@@ -337,7 +353,10 @@ class ReservationCancelView(APIView):
         if not (is_buyer or is_importer or is_admin):
             return Response({'detail': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
 
-        if res.status not in ('active', 'pending_payment', 'pending_review'):
+        # 'active' is deliberately absent: the status is retained as an enum
+        # value for rows created before the pending_payment → pending_review
+        # split, but nothing should produce it any more.
+        if res.status not in ('pending_payment', 'pending_review'):
             return Response(
                 {'detail': f'Cannot cancel a reservation with status "{res.get_status_display()}".'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -369,88 +388,11 @@ class ReservationCancelView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# POST /api/reservations/{id}/convert-to-order/ — Convert to ImportOrder
-# ---------------------------------------------------------------------------
-
-class ReservationConvertView(APIView):
-    """
-    POST /api/reservations/{id}/convert-to-order/
-    Importer accepts the reservation and creates an ImportOrder.
-    """
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request, pk):
-        try:
-            res = Reservation.objects.select_related('car', 'buyer', 'importer').get(pk=pk)
-        except Reservation.DoesNotExist:
-            return Response({'detail': 'Reservation not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        user = request.user
-        is_importer = res.importer_id == user.id
-        is_admin = user.is_staff or getattr(user, 'role', '') == 'admin'
-
-        if not (is_importer or is_admin):
-            return Response(
-                {'detail': 'Only the importer can convert a reservation to an order.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        if res.status not in ('active', 'pending_review'):
-            return Response(
-                {'detail': f'Cannot convert a reservation with status "{res.get_status_display()}".'},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        # Create ImportOrder
-        car = res.car
-        price = car.final_price_sar or car.price or 0
-        order = ImportOrder.objects.create(
-            car=car,
-            buyer=res.buyer,
-            importer=res.importer,
-            total_price=price,
-            remaining_balance=price,
-            status='confirmed',
-            buyer_notes=res.buyer_notes,
-        )
-
-        # First timeline event
-        ImportTimeline.objects.create(
-            order=order,
-            event_type='order_confirmed',
-            title='تم تأكيد الطلب من الحجز',
-            description=f'تم تحويل الحجز {res.reservation_number} إلى طلب.',
-            date=timezone.now(),
-            created_by=user,
-            is_public=True,
-        )
-
-        # Update reservation
-        res.convert_to_order(order)
-        _post_system_message(res, f'تم تأكيد الطلب. رقم الطلب: {order.order_number}')
-
-        # Notify buyer (in-app + email)
-        try:
-            from notifications.utils import notify
-            notify(
-                recipient=res.buyer,
-                notification_type='system',
-                title='تم تأكيد طلبك',
-                message=f'قبل المستورد حجزك وتم إنشاء طلب جديد #{order.order_number}.',
-            )
-        except Exception:
-            pass
-        _send_buyer_accepted_email(res, order)
-
-        from .serializers import ImportOrderDetailSerializer
-        return Response({
-            'detail': 'Reservation converted to order successfully.',
-            'order': ImportOrderDetailSerializer(order, context={'request': request}).data,
-        }, status=status.HTTP_201_CREATED)
-
-
-# ---------------------------------------------------------------------------
 # POST /api/reservations/{id}/accept/ — Importer accepts
+#
+# (The old convert-to-order/ endpoint lived here. It duplicated accept/ with
+# looser status checks and a different response envelope; accept/ is the one
+# the clients use.)
 # ---------------------------------------------------------------------------
 
 class ReservationAcceptView(APIView):

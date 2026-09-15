@@ -23,5 +23,6 @@ urlpatterns = [
     path('reservations/<int:pk>/cancel/',            reservation_views.ReservationCancelView.as_view(),    name='reservation-cancel'),
     path('reservations/<int:pk>/accept/',            reservation_views.ReservationAcceptView.as_view(),    name='reservation-accept'),
     path('reservations/<int:pk>/reject/',            reservation_views.ReservationRejectView.as_view(),    name='reservation-reject'),
-    path('reservations/<int:pk>/convert-to-order/',  reservation_views.ReservationConvertView.as_view(),   name='reservation-convert'),
+    # convert-to-order/ removed — it duplicated accept/ (same effect, different
+    # status checks). Use POST /api/reservations/{id}/accept/.
 ]

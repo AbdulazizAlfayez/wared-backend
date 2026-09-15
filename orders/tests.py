@@ -139,17 +139,20 @@ class OrderStatusTransitionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['status'], 'confirmed')
 
-    # Test 6a — flexible transitions: skipping ahead is now allowed
-    def test_skip_ahead_transition_allowed(self):
-        """Flexible mode: pending → shipped is allowed (importer can jump stages)."""
+    # Test 6a — VALID_TRANSITIONS is enforced: skipping ahead is rejected.
+    # (This previously asserted the opposite. Flexible transitions let an order
+    # reach 'shipped' straight from 'pending' — no sourcing, no purchase, and
+    # no balance payment. Staff can still override with force=true.)
+    def test_skip_ahead_transition_rejected(self):
+        """pending → shipped skips the chain → 400 naming the legal next steps."""
         self.client.force_authenticate(user=self.importer)
         response = self.client.patch(
             self.update_url,
             {'status': 'shipped'},
             format='json',
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['status'], 'shipped')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('deposit_requested', str(response.data))
 
     # Test 6b — unknown status is still rejected
     def test_unknown_status_rejected(self):
@@ -347,10 +350,19 @@ class OrderCarSyncTests(APITestCase):
         cls.listing = make_listing(cls.importer, import_status='available')
 
     def _make_order(self, order_status='confirmed'):
-        return ImportOrder.objects.create(
+        order = ImportOrder.objects.create(
             car=self.listing, buyer=self.buyer, importer=self.importer,
             total_price=100000, remaining_balance=100000, status=order_status,
         )
+        # These tests are about car import_status syncing, not about payment.
+        # Everything from 'purchased' onward now requires a confirmed balance,
+        # so give the order one rather than let the 409 gate mask the subject.
+        from payments.models import PaymentTransaction
+        PaymentTransaction.objects.create(
+            order=order, user=self.buyer, amount=100000,
+            payment_type='balance', method='mada', status='succeeded',
+        )
+        return order
 
     def test_order_shipped_syncs_car_to_shipping(self):
         # 'preparing_shipment' → 'shipped' is the valid transition path

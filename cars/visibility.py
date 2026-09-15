@@ -34,15 +34,27 @@ def public_market_q():
     )
 
 
+#: Reservation statuses that still give the buyer a claim on the car.
+LIVE_RESERVATION_STATUSES = ('pending_payment', 'pending_review', 'active')
+
+
 def party_q(user):
     """
     Q object selecting listings a specific authenticated user may ALSO see
-    beyond the public set: their own listings (importer) and cars they have
-    an order on (buyer). Admins are handled by callers (they see everything).
+    beyond the public set: their own listings (importer), cars they have an
+    order on, and cars they currently hold a reservation on (buyer).
+    Admins are handled by callers (they see everything).
+
+    The reservation clause matters: reserving a car hides it from the market,
+    and without this the buyer who just paid SAR 99 would get a 404 on the
+    very car they reserved — there is no ImportOrder until the importer
+    accepts.
     """
     return (
         (Q(owner=user) & Q(is_active=True))
         | Q(import_orders__buyer=user)
+        | (Q(reservations__buyer=user)
+           & Q(reservations__status__in=LIVE_RESERVATION_STATUSES))
     )
 
 

@@ -288,15 +288,26 @@ _PAID_STATUSES = frozenset({
 
 def get_allow_contact(conversation) -> bool:
     """
-    Return True if an ImportOrder exists between the conversation's buyer
-    and importer (seller) with status at or past deposit_paid.
-    """
-    from orders.models import ImportOrder
+    Return True once the buyer's FULL BALANCE for this car has been confirmed.
 
-    return ImportOrder.objects.filter(
-        buyer_id=conversation.buyer_id,
-        importer_id=conversation.seller_id,
-        status__in=_PAID_STATUSES,
+    Gated on a succeeded 'balance' PaymentTransaction, not on order status.
+    Order status is not a proxy for payment: accepting a reservation creates
+    the order already in 'confirmed', which previously unmasked phone numbers
+    the moment the importer clicked Accept — before a single riyal of the car
+    price had been paid, and while WARED still had to be the one taking the
+    payment.
+
+    Scoped to the conversation's own listing, so paying for one car does not
+    unmask contacts in an unrelated conversation with the same importer.
+    """
+    from payments.models import PaymentTransaction
+
+    return PaymentTransaction.objects.filter(
+        order__buyer_id=conversation.buyer_id,
+        order__importer_id=conversation.seller_id,
+        order__car_id=conversation.listing_id,
+        payment_type='balance',
+        status='succeeded',
     ).exists()
 
 

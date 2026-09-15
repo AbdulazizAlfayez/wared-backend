@@ -921,11 +921,18 @@ class ListingViewSet(viewsets.ModelViewSet):
             *[When(id=pk, then=Value(i)) for i, pk in enumerate(ids)],
             output_field=IntegerField(),
         )
-        listings = (
+        # Compare shows full detail for specific ids, so it uses the same
+        # visibility rule as opening each car by id: reserved/sold/in-deal cars
+        # are visible only to the parties involved. Without this, compare was a
+        # back door that returned reserved cars to anyone who knew the id.
+        base = (
             Listing.objects
             .select_related('owner', 'showroom', 'workshop')
             .prefetch_related('images')
             .filter(id__in=ids, status='approved', is_active=True)
+        )
+        listings = (
+            detail_queryset(base, request.user)
             .annotate(_order=order_preserved)
             .order_by('_order')
         )

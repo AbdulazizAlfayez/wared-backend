@@ -105,7 +105,12 @@ class ConversationViewSet(
             qs = (buyer_qs | seller_qs).distinct()
         return qs.order_by('-last_message_at', '-updated_at')
 
-    # -- Create (with reservation gate) ----------------------------------------
+    # -- Create ----------------------------------------------------------------
+    #
+    # Deliberately NOT gated on a reservation: a buyer may message an importer
+    # about any listing at any time. What is gated is *contact exchange* —
+    # phone/email stay masked until the order's balance payment is confirmed
+    # (see get_allow_contact / mask_contact_info below).
 
     def create(self, request, *args, **kwargs):
         serializer = StartConversationSerializer(data=request.data, context={'request': request})
