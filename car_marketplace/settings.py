@@ -416,6 +416,14 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=0),  # every hour on the hour
         'options': {'timezone': 'Asia/Riyadh'},
     },
+    # Phase M3 — Release cars whose reservation lapsed after 7 days with no
+    # importer decision. Offset from the hour so it does not contend with
+    # expire-promotions.
+    'expire-reservations': {
+        'task': 'orders.tasks.expire_reservations',
+        'schedule': crontab(minute=30),  # every hour at :30
+        'options': {'timezone': 'Asia/Riyadh'},
+    },
     # Phase 5.4 — Fraud Prevention
     'check-ip-abuse': {
         'task': 'fraud.tasks.check_ip_abuse',

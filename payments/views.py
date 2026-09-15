@@ -66,20 +66,23 @@ class ReservationPayView(APIView):
             txn.status = 'succeeded'
             txn.save()
 
-            # Activate reservation
+            # Record the payment, then let the model own the state change.
             reservation.payment_method = method
             reservation.payment_reference = result.transaction_id
             reservation.payment_status = 'succeeded'
             reservation.paid_at = timezone.now()
-            reservation.status = 'pending_review'
-            reservation.save()
+            reservation.save(update_fields=[
+                'payment_method', 'payment_reference', 'payment_status',
+                'paid_at', 'updated_at',
+            ])
 
-            # Mark car as reserved
+            # activate() sets pending_review, remembers the car's previous
+            # import_status, and locks the car (is_reserved + current_reservation
+            # + import_status='reserved'). Doing it inline here used to leave
+            # current_reservation NULL, so nothing could find the reservation
+            # holding the lock.
+            reservation.activate()
             car = reservation.car
-            if hasattr(car, 'is_reserved'):
-                car.is_reserved = True
-                car.import_status = 'reserved'
-                car.save(update_fields=['is_reserved', 'import_status'])
 
             # Notify importer
             try:

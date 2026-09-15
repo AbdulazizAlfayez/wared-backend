@@ -197,8 +197,10 @@ class OrderUpdateStatusView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
+        is_admin = user.is_staff or getattr(user, 'role', '') == 'admin'
         serializer = UpdateOrderStatusSerializer(
-            data=request.data, context={'order': order}
+            data=request.data,
+            context={'order': order, 'user': user, 'can_force': is_admin},
         )
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -206,6 +208,22 @@ class OrderUpdateStatusView(APIView):
         data       = serializer.validated_data
         new_status = data['status']
         old_status = order.status
+
+        # Money gate: nothing from 'purchased' onward may happen until the
+        # buyer's balance payment is confirmed. Staff can override with force.
+        if (
+            new_status in ImportOrder.PAYMENT_GATED_STATUSES
+            and not data.get('_forced')
+            and not order.balance_payment_confirmed()
+        ):
+            return Response(
+                {
+                    'detail': 'Balance payment not confirmed.',
+                    'required_status': new_status,
+                    'balance_due_sar': float(order.total_price or 0),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
 
         # Apply status change
         order.status = new_status
@@ -282,18 +300,21 @@ class OrderCancelView(APIView):
         if not is_admin and order.buyer_id != user.id and order.importer_id != user.id:
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
-        cancellation_reason = request.data.get('cancellation_reason', '')
-        if not cancellation_reason:
-            return Response(
-                {'cancellation_reason': 'Cancellation reason is required.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # Optional: the website's and mobile app's Cancel buttons send no body.
+        # A supplied reason is always stored as given.
+        from .serializers import default_cancellation_reason
+        cancellation_reason = (
+            request.data.get('cancellation_reason') or ''
+        ).strip() or default_cancellation_reason(user)
 
         # Validate transition
         try:
             order.validate_status_transition('cancelled')
         except Exception as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': str(e), 'allowed_next_statuses': order.allowed_next_statuses()},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         order.status              = 'cancelled'
         order.cancellation_reason = cancellation_reason

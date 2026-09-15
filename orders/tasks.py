@@ -14,6 +14,84 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Reservation expiry — shared implementation
+#
+# The single source of truth for "which reservations have lapsed and what
+# happens to them". Both the `expire_reservations` management command and the
+# hourly Celery beat task call this, so they can never drift apart.
+# ---------------------------------------------------------------------------
+
+def expire_due_reservations(now=None, stdout=None):
+    """
+    Expire pending_review reservations older than RESERVATION_EXPIRY_DAYS.
+
+    Expiry releases the car: is_reserved False, current_reservation None, and
+    import_status restored to whatever it was before the reservation locked it
+    (see Reservation._release_car).
+
+    `now` is injectable so tests can drive it with a frozen clock.
+    Returns the list of expired reservation numbers.
+    """
+    from django.utils import timezone
+
+    from orders.models import Reservation
+
+    now = now or timezone.now()
+    cutoff = now - timezone.timedelta(days=Reservation.RESERVATION_EXPIRY_DAYS)
+
+    due = Reservation.objects.filter(
+        status='pending_review',
+        created_at__lt=cutoff,
+    ).select_related('car', 'buyer', 'importer')
+
+    expired = []
+    for res in due:
+        res.expire()
+        expired.append(res.reservation_number)
+
+        try:
+            from orders.reservation_views import _post_system_message
+            _post_system_message(res, 'انتهت صلاحية الحجز.')
+        except Exception:
+            pass
+
+        try:
+            from notifications.utils import notify
+            notify(
+                recipient=res.buyer,
+                notification_type='system',
+                title='انتهت صلاحية الحجز',
+                message=(
+                    f'لم يستجب المستورد لحجزك على {res.car.title} خلال 7 أيام. '
+                    'يمكنك حجز سيارة أخرى.'
+                ),
+            )
+            notify(
+                recipient=res.importer,
+                notification_type='system',
+                title='فاتك حجز',
+                message=f'انتهت صلاحية حجز {res.buyer.name} على {res.car.title} لعدم الاستجابة.',
+            )
+        except Exception:
+            pass
+
+        if stdout is not None:
+            stdout.write(f'  Expired: {res.reservation_number} (car: {res.car.title})')
+
+    return expired
+
+
+@shared_task(name='orders.tasks.expire_reservations')
+def expire_reservations():
+    """Hourly Celery Beat task — see CELERY_BEAT_SCHEDULE."""
+    expired = expire_due_reservations()
+    if expired:
+        logger.info('expire_reservations: expired %s reservation(s): %s',
+                    len(expired), ', '.join(expired))
+    return f'Expired {len(expired)} reservation(s).'
+
 # ---------------------------------------------------------------------------
 # Status → email template mapping
 # ---------------------------------------------------------------------------

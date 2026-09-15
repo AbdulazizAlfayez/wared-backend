@@ -86,12 +86,20 @@ class ImportedCarsByCountryView(APIView):
         results = []
         total_globally = 0
 
+        # Lazy import alongside Listing — same circular-dependency reason.
+        from cars.visibility import public_market_q
+
         for country in countries:
+            # Reserved cars are off-market and must not be counted here, so
+            # this now goes through the shared public_market_q() rather than
+            # its own status list. NOTE: the per-country "reserved" figure is
+            # consequently always 0 — a reserved car is private to its buyer,
+            # the importer and staff.
             cars = Listing.objects.filter(
+                public_market_q(),
                 source_country=country.code,
                 import_status__in=self.PUBLIC_STATUSES,
-                is_active=True,
-            )
+            ).distinct()
             total = cars.count()
             if total == 0 and country.code == "other":
                 continue  # skip "other" when empty

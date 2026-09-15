@@ -56,6 +56,15 @@ class ImportOrder(models.Model):
     }
     TERMINAL_STATUSES = {'completed', 'cancelled', 'refunded'}
 
+    # Everything from 'purchased' onward means WARED has committed real money
+    # on the buyer's behalf. None of it may happen before the buyer's balance
+    # payment is confirmed (a succeeded 'balance' PaymentTransaction).
+    PAYMENT_GATED_STATUSES = {
+        'purchased', 'preparing_shipment', 'shipped', 'arrived_port',
+        'in_customs', 'customs_cleared', 'inspection', 'ready',
+        'delivered', 'completed',
+    }
+
     # -----------------------------------------------------------------------
     # Core FK relations
     # -----------------------------------------------------------------------
@@ -167,14 +176,24 @@ class ImportOrder(models.Model):
     # -----------------------------------------------------------------------
     # Status transition validation
     # -----------------------------------------------------------------------
+    def allowed_next_statuses(self):
+        """The statuses this order may legally move to right now."""
+        if self.status in self.TERMINAL_STATUSES:
+            return []
+        return list(self.VALID_TRANSITIONS.get(self.status, []))
+
     def validate_status_transition(self, new_status):
         """
-        Flexible transitions: the importer/admin may move the order to ANY
-        stage — forward to skip steps or backward to correct a mistake.
-        VALID_TRANSITIONS is kept as the *recommended* next-step chain (the
-        UI highlights it), but is no longer enforced. Only two hard rules:
+        Enforce VALID_TRANSITIONS. Rules:
           1. Terminal states (completed/cancelled/refunded) are locked.
           2. The new status must be a real status.
+          3. The new status must be in VALID_TRANSITIONS[current].
+
+        Previously this deliberately allowed any status from any status so an
+        importer could skip or rewind stages. That let an order reach
+        'delivered' straight from 'confirmed' with no sourcing, purchase or
+        shipping — and no payment. Staff can still override via `force=true`
+        on the update-status endpoint.
         """
         if self.status == new_status:
             return  # no-op
@@ -185,6 +204,24 @@ class ImportOrder(models.Model):
         valid = {choice[0] for choice in self.STATUS_CHOICES}
         if new_status not in valid:
             raise ValidationError(f"Unknown status '{new_status}'.")
+
+        allowed = self.allowed_next_statuses()
+        if new_status not in allowed:
+            allowed_text = ', '.join(allowed) if allowed else 'none'
+            raise ValidationError(
+                f"Cannot move an order from '{self.status}' to '{new_status}'. "
+                f"Allowed next statuses: {allowed_text}."
+            )
+
+    def balance_payment_confirmed(self) -> bool:
+        """True once the buyer's full balance payment has been confirmed."""
+        try:
+            from payments.models import PaymentTransaction
+            return PaymentTransaction.objects.filter(
+                order=self, payment_type='balance', status='succeeded',
+            ).exists()
+        except Exception:
+            return False
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +398,15 @@ class Reservation(models.Model):
     # Importer notification tracking
     importer_notified_at = models.DateTimeField(null=True, blank=True)
 
+    # The car's import_status immediately before this reservation locked it.
+    # Captured in activate() so expiry/cancellation can put the car back the
+    # way it was instead of guessing 'available' — a car reserved while in
+    # 'ready_for_delivery' must return to 'ready_for_delivery', not to
+    # 'available'.
+    car_import_status_before = models.CharField(
+        max_length=25, blank=True, default='',
+    )
+
     # Linked order (populated when converted)
     converted_order = models.ForeignKey(
         'orders.ImportOrder',
@@ -404,15 +450,65 @@ class Reservation(models.Model):
             self.reservation_number = self._generate_reservation_number()
         super().save(*args, **kwargs)
 
-    def activate(self):
-        """Mark as pending_review (awaiting importer decision) and lock the car."""
-        self.status = 'pending_review'
-        self.save(update_fields=['status', 'updated_at'])
-        # Lock the listing
+    # -----------------------------------------------------------------------
+    # Car lock / release — one implementation, used by every path that ends a
+    # reservation, so activate/cancel/expire can never drift apart.
+    # -----------------------------------------------------------------------
+
+    def _lock_car(self):
+        """
+        Take the car off the market for this reservation.
+
+        `import_status` is what actually hides a car: cars.visibility's
+        public_market_q() filters on import_status, NOT on is_reserved. Setting
+        only is_reserved here would leave the car visible to the whole market
+        while it is reserved.
+        """
         car = self.car
+        self.car_import_status_before = car.import_status or ''
+        self.save(update_fields=['car_import_status_before', 'updated_at'])
+
         car.is_reserved = True
         car.current_reservation = self
-        car.save(update_fields=['is_reserved', 'current_reservation'])
+        car.import_status = 'reserved'
+        car.save(update_fields=['is_reserved', 'current_reservation', 'import_status'])
+
+    def _release_car(self):
+        """
+        Put the car back on the market exactly as it was before the lock.
+
+        Restores the remembered pre-reservation import_status rather than
+        assuming 'available' — a car reserved out of 'ready_for_delivery'
+        belongs back in 'ready_for_delivery'.
+        """
+        car = self.car
+        if car.current_reservation_id not in (None, self.pk):
+            # A newer reservation owns the lock; leave it alone.
+            return
+
+        car.is_reserved = False
+        car.current_reservation = None
+        # Only restore if we are the ones who set it to 'reserved'.
+        if car.import_status == 'reserved':
+            car.import_status = self.car_import_status_before or 'available'
+        car.save(update_fields=['is_reserved', 'current_reservation', 'import_status'])
+
+    def activate(self):
+        """
+        Mark as pending_review (awaiting importer decision), lock the car, and
+        make sure the buyer↔importer conversation exists.
+        """
+        self.status = 'pending_review'
+        self.save(update_fields=['status', 'updated_at'])
+        self._lock_car()
+
+        # Imported lazily: the helper lives with the reservation views and
+        # importing it at module scope would create a models↔views cycle.
+        try:
+            from orders.reservation_views import _create_reservation_conversation
+            _create_reservation_conversation(self)
+        except Exception:
+            pass  # Messaging must never block a paid reservation.
 
     def cancel(self, by: str, reason: str = ''):
         """Cancel and unlock the car."""
@@ -420,11 +516,7 @@ class Reservation(models.Model):
         self.cancelled_at = timezone.now()
         self.cancellation_reason = reason
         self.save(update_fields=['status', 'cancelled_at', 'cancellation_reason', 'updated_at'])
-        # Unlock the listing
-        car = self.car
-        car.is_reserved = False
-        car.current_reservation = None
-        car.save(update_fields=['is_reserved', 'current_reservation'])
+        self._release_car()
 
     def convert_to_order(self, order):
         """Mark as converted and link to the ImportOrder."""
@@ -433,12 +525,24 @@ class Reservation(models.Model):
         self.save(update_fields=['status', 'converted_order', 'updated_at'])
 
     def expire(self):
-        """Mark as expired and unlock the car."""
+        """Mark as expired and release the car back to the market."""
         self.status = 'expired'
         self.cancelled_at = timezone.now()
         self.cancellation_reason = 'انتهت صلاحية الحجز — لم يستجب المستورد خلال 7 أيام'
         self.save(update_fields=['status', 'cancelled_at', 'cancellation_reason', 'updated_at'])
-        car = self.car
-        car.is_reserved = False
-        car.current_reservation = None
-        car.save(update_fields=['is_reserved', 'current_reservation'])
+        self._release_car()
+
+    @property
+    def expires_at(self):
+        """When an unanswered reservation lapses — created_at + 7 days."""
+        if not self.created_at:
+            return None
+        return self.created_at + datetime.timedelta(days=self.RESERVATION_EXPIRY_DAYS)
+
+    @property
+    def hours_remaining(self) -> float:
+        """Hours until expiry, floored at 0. Only meaningful while pending."""
+        expiry = self.expires_at
+        if expiry is None:
+            return 0.0
+        return round(max(0.0, (expiry - timezone.now()).total_seconds() / 3600), 1)
