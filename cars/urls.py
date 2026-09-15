@@ -23,6 +23,7 @@ from .views import (
     ImportedCarArrivingView,
     ImportedCarDetailView,
     ImportedCarFilterOptionsView,
+    ListingFilterOptionsView,
     AdminConfirmPromotionPaymentView,
     AdminRejectPromotionPaymentView,
 )
@@ -66,6 +67,10 @@ urlpatterns = [
     # the router's listings/<pk>/ pattern swallows "limit" as a pk → 404.
     # (The same path in fraud/urls.py is unreachable because cars is included first.)
     path('listings/limit/',                  UserListingLimitView.as_view(),  name='listing-limit'),
+
+    # Facets for the Filters screen. Like the routes above, this must precede
+    # the router include or "filter-options" is matched as a listing pk.
+    path('listings/filter-options/',         ListingFilterOptionsView.as_view(), name='listing-filter-options'),
 
     # Listing CRUD + approve/reject/my/compare/autocomplete actions (router-generated)
     path('listings/', include(listing_router.urls)),

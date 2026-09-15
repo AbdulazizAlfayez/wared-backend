@@ -116,6 +116,7 @@ INSTALLED_APPS = [
     'source_countries.apps.SourceCountriesConfig',
     'assistant',
     'appconfig',
+    'social',
     # Celery
     'django_celery_beat',
     'django_celery_results',
@@ -270,6 +271,9 @@ REST_FRAMEWORK = {
         'assistant_user': '30/hour',
         'assistant_anon': '10/hour',
         'mobile_auth':    '30/hour',
+        'social_comment': '10/min',
+        'social_like':    '60/min',
+        'social_report':  '20/hour',
     },
     'EXCEPTION_HANDLER': 'car_marketplace.exceptions.bilingual_exception_handler',
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
