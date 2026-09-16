@@ -77,15 +77,8 @@ def _sync_car_import_status(order, new_order_status):
         if not car:
             return
         if new_order_status in ('cancelled', 'refunded'):
-            update_fields = []
-            if car.import_status != 'available':
-                car.import_status = 'available'
-                update_fields.append('import_status')
-            if car.status == 'sold':
-                car.status = 'approved'
-                update_fields.append('status')
-            if update_fields:
-                car.save(update_fields=update_fields)
+            # Clears the reservation lock too, so the car is public again.
+            order.release_car()
             return
         import_status = _ORDER_TO_IMPORT_STATUS.get(new_order_status)
         if import_status:
@@ -322,13 +315,9 @@ class OrderCancelView(APIView):
         order.cancelled_at        = timezone.now()
         order.save()
 
-        # Release car back to the market if no other active orders
-        # (import_status → available; auto-Sold status reverts to approved)
-        active_orders = ImportOrder.objects.filter(
-            car=order.car
-        ).exclude(status__in=['cancelled', 'refunded', 'completed']).exclude(pk=order.pk)
-        if not active_orders.exists():
-            _sync_car_import_status(order, 'cancelled')
+        # Release car back to the market (release_car() leaves it alone if
+        # another live deal still holds it)
+        _sync_car_import_status(order, 'cancelled')
 
         ImportTimeline.objects.create(
             order=order,

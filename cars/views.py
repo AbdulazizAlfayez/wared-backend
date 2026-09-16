@@ -63,7 +63,7 @@ from .serializers import (
     PromoteListingSerializer,
 )
 from .filters import CarFilter, ListingFilter, ShowroomFilter, WorkshopFilter
-from .visibility import public_market_q, party_q, detail_queryset
+from .visibility import public_market_q
 from .permissions import IsOwnerOrAdmin
 from .geo_utils import bounding_box, haversine_annotation
 
@@ -477,6 +477,7 @@ class ListingViewSet(viewsets.ModelViewSet):
         now  = timezone.now()
         base = Listing.objects.select_related(
             'owner', 'showroom', 'workshop', 'approved_by', 'city_obj',
+            'current_reservation',
         ).prefetch_related(
             'images',
             # Phase 4.6 — prefetch only active promotions to avoid N+1 in ListingSerializer
@@ -488,7 +489,7 @@ class ListingViewSet(viewsets.ModelViewSet):
                 to_attr='active_promotions_prefetched',
             ),
         ).annotate(
-            # Social counts, annotated on `base` so all four branches below
+            # Social counts, annotated on `base` so both querysets below
             # inherit them. distinct=True on both: the two LEFT JOINs would
             # otherwise multiply each other's rows.
             like_total=Count('likes', distinct=True),
@@ -499,18 +500,10 @@ class ListingViewSet(viewsets.ModelViewSet):
             ),
         )
 
-        # Off-market rules for public browse — see cars/visibility.py
-        # (single source of truth shared with /api/imported-cars/ views).
-        _public = public_market_q()
-
-        if not user or not user.is_authenticated:
-            qs = base.filter(_public)
-        elif getattr(user, 'role', None) == 'admin':
-            qs = base.all()
-        else:
-            # Parties keep access: the importer sees their own listings and
-            # a buyer keeps access to a car they have an order on.
-            qs = base.filter(_public | party_q(user)).distinct()
+        # Visibility — see cars/visibility.py. On-market cars for everyone;
+        # a reserved/in-deal car only for its buyer, its importer and staff
+        # (so retrieve 404s for anyone else). Staff get everything.
+        qs = base.filter(public_market_q(user))
 
         # ?mine=1 — the importer's own listings ONLY (My Listings page).
         # Cars in a PAID deal (full payment verified by WARED) are excluded
@@ -617,7 +610,9 @@ class ListingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        base_qs = Listing.objects.filter(status='approved', is_active=True)
+        base_qs = Listing.objects.filter(
+            public_market_q(request.user), status='approved', is_active=True,
+        )
 
         # Fetch up to 10 distinct makes first, fill remaining slots with models
         makes = list(
@@ -657,8 +652,8 @@ class ListingViewSet(viewsets.ModelViewSet):
         period   = request.query_params.get('period', '')
         base_qs  = (
             Listing.objects
-            .filter(status='approved', is_active=True)
-            .select_related('owner', 'showroom', 'workshop')
+            .filter(public_market_q(request.user), status='approved', is_active=True)
+            .select_related('owner', 'showroom', 'workshop', 'current_reservation')
             .prefetch_related('images')
         )
 
@@ -935,14 +930,12 @@ class ListingViewSet(viewsets.ModelViewSet):
         # visibility rule as opening each car by id: reserved/sold/in-deal cars
         # are visible only to the parties involved. Without this, compare was a
         # back door that returned reserved cars to anyone who knew the id.
-        base = (
-            Listing.objects
-            .select_related('owner', 'showroom', 'workshop')
-            .prefetch_related('images')
-            .filter(id__in=ids, status='approved', is_active=True)
-        )
         listings = (
-            detail_queryset(base, request.user)
+            Listing.objects
+            .select_related('owner', 'showroom', 'workshop', 'current_reservation')
+            .prefetch_related('images')
+            .filter(public_market_q(request.user), id__in=ids,
+                    status='approved', is_active=True)
             .annotate(_order=order_preserved)
             .order_by('_order')
         )
@@ -1066,6 +1059,7 @@ class ListingViewSet(viewsets.ModelViewSet):
         qs = (
             Listing.objects
             .filter(
+                public_market_q(request.user),
                 status='approved', is_active=True,
                 latitude__isnull=False, longitude__isnull=False,
                 latitude__gte=box['lat_min'], latitude__lte=box['lat_max'],
@@ -1100,7 +1094,7 @@ class ListingViewSet(viewsets.ModelViewSet):
         """
         qs = (
             Listing.objects
-            .filter(status='approved', is_active=True,
+            .filter(public_market_q(request.user), status='approved', is_active=True,
                     latitude__isnull=False, longitude__isnull=False)
             .prefetch_related('images')
         )
@@ -1133,9 +1127,10 @@ class ListingViewSet(viewsets.ModelViewSet):
             Listing.objects
             .filter(
                 Q(is_featured=True) | Q(is_homepage=True),
+                public_market_q(request.user),
                 status='approved', is_active=True,
             )
-            .select_related('owner', 'showroom', 'workshop')
+            .select_related('owner', 'showroom', 'workshop', 'current_reservation')
             .prefetch_related(
                 'images',
                 Prefetch(
@@ -1517,7 +1512,8 @@ class ShowroomViewSet(viewsets.ModelViewSet):
         """GET /api/showrooms/{id}/listings/ — approved listings for this showroom."""
         showroom = self.get_object()
         qs = Listing.objects.filter(
-            showroom=showroom, status='approved', is_active=True
+            public_market_q(request.user),
+            showroom=showroom, status='approved', is_active=True,
         ).order_by('-created_at')
         page = self.paginate_queryset(qs)
         if page is not None:
@@ -2083,7 +2079,10 @@ class ListingImageViewSet(APIView):
     # -- list ---------------------------------------------------------------
 
     def get(self, request, listing_id, pk=None):
-        listing = self._get_listing(listing_id)
+        # Public read — the car's photos are as private as the car itself.
+        listing = get_object_or_404(
+            Listing.objects.filter(public_market_q(request.user)), pk=listing_id,
+        )
         if pk is not None:
             image = get_object_or_404(ListingImage, pk=pk, listing=listing)
             return Response(ListingImageSerializer(image).data)
@@ -2305,8 +2304,8 @@ class SavedSearchViewSet(viewsets.ModelViewSet):
         saved_search = self.get_object()
         base_qs = (
             Listing.objects
-            .filter(status='approved', is_active=True)
-            .select_related('owner', 'showroom', 'workshop')
+            .filter(public_market_q(request.user), status='approved', is_active=True)
+            .select_related('owner', 'showroom', 'workshop', 'current_reservation')
             .prefetch_related('images')
         )
         filtered_qs = ListingFilter(saved_search.filters, queryset=base_qs).qs
@@ -2336,7 +2335,10 @@ class RecentlyViewedView(generics.GenericAPIView):
     def get_queryset(self):
         return (
             RecentlyViewed.objects
-            .filter(user=self.request.user)
+            .filter(
+                user=self.request.user,
+                listing__in=Listing.objects.filter(public_market_q(self.request.user)),
+            )
             .select_related(
                 'listing', 'listing__owner',
                 'listing__showroom', 'listing__workshop',
@@ -2766,8 +2768,10 @@ class ImportedCarListView(generics.ListAPIView):
         # Reserved/sold cars, and cars in an active deal, are private to the
         # buyer / importer / admin — they never appear here.
         qs = Listing.objects.filter(
-            public_market_q()
-        ).select_related('owner', 'city_obj').prefetch_related('images').distinct()
+            public_market_q(self.request.user)
+        ).select_related(
+            'owner', 'city_obj', 'current_reservation',
+        ).prefetch_related('images')
 
         params = self.request.query_params
 
@@ -2877,11 +2881,13 @@ class ImportedCarDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         # Public cars for everyone; reserved/sold/deal cars stay reachable
         # ONLY for the parties involved (owner, buyer with an order, admin).
-        base = Listing.objects.filter(
+        return Listing.objects.filter(
+            public_market_q(self.request.user),
             is_active=True,
             status='approved',
-        ).select_related('owner', 'city_obj').prefetch_related('images')
-        return detail_queryset(base, self.request.user)
+        ).select_related(
+            'owner', 'city_obj', 'current_reservation',
+        ).prefetch_related('images')
 
 
 class ImportedCarArrivingView(generics.ListAPIView):
@@ -2896,9 +2902,11 @@ class ImportedCarArrivingView(generics.ListAPIView):
         # "Coming soon" stock only — cars in a private deal are excluded
         # (their shipping progress belongs to the buyer's order page).
         return Listing.objects.filter(
-            public_market_q(),
+            public_market_q(self.request.user),
             import_status__in=['shipping', 'at_port', 'in_customs', 'customs_cleared'],
-        ).select_related('owner', 'city_obj').prefetch_related('images').distinct()
+        ).select_related(
+            'owner', 'city_obj', 'current_reservation',
+        ).prefetch_related('images')
 
 
 # ---------------------------------------------------------------------------

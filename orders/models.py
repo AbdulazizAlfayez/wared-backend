@@ -6,8 +6,12 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
+
+
+class CarAlreadyReserved(Exception):
+    """Another paid reservation already holds the lock on this car."""
 
 
 class ImportOrder(models.Model):
@@ -222,6 +226,47 @@ class ImportOrder(models.Model):
             ).exists()
         except Exception:
             return False
+
+    def release_car(self):
+        """
+        This order was cancelled/refunded: put the car back on the market,
+        unless another live deal still holds it.
+
+        Clears the reservation lock (is_reserved, current_reservation) — the
+        reservation that became this order kept it — and restores the
+        pre-reservation import_status when one was recorded, else 'available'.
+        An auto-Sold car (full payment confirmed) reverts to 'approved'.
+        """
+        from cars.models import Listing
+        from cars.visibility import ACTIVE_ORDER_STATUSES, PAID_RESERVATION_STATUSES
+
+        if not self.car_id:
+            return
+        with transaction.atomic():
+            car = Listing.objects.select_for_update().get(pk=self.car_id)
+            still_in_deal = ImportOrder.objects.filter(
+                car_id=car.pk, status__in=ACTIVE_ORDER_STATUSES,
+            ).exclude(pk=self.pk).exists()
+            if still_in_deal:
+                return
+
+            lock = car.current_reservation
+            if lock is not None and lock.status in PAID_RESERVATION_STATUSES:
+                # A fresh paid reservation holds the car; not ours to release.
+                return
+
+            source = (
+                self.source_reservation.exclude(car_import_status_before='')
+                .order_by('-created_at').first()
+            )
+            car.is_reserved = False
+            car.current_reservation = None
+            car.import_status = (source.car_import_status_before if source else '') or 'available'
+            update_fields = ['is_reserved', 'current_reservation', 'import_status']
+            if car.status == 'sold':
+                car.status = 'approved'
+                update_fields.append('status')
+            car.save(update_fields=update_fields)
 
 
 # ---------------------------------------------------------------------------
@@ -455,14 +500,20 @@ class Reservation(models.Model):
     # reservation, so activate/cancel/expire can never drift apart.
     # -----------------------------------------------------------------------
 
+    def _locked_car(self):
+        """The car row, locked FOR UPDATE. Call inside transaction.atomic()."""
+        from cars.models import Listing
+        car = Listing.objects.select_for_update().get(pk=self.car_id)
+        self.car = car
+        return car
+
     def _lock_car(self):
         """
         Take the car off the market for this reservation.
 
-        `import_status` is what actually hides a car: cars.visibility's
-        public_market_q() filters on import_status, NOT on is_reserved. Setting
-        only is_reserved here would leave the car visible to the whole market
-        while it is reserved.
+        cars.visibility.public_market_q() hides the car on is_reserved, on
+        import_status='reserved' AND on the paid reservation row itself; all
+        three are set together so nothing reading any one of them disagrees.
         """
         car = self.car
         self.car_import_status_before = car.import_status or ''
@@ -497,10 +548,18 @@ class Reservation(models.Model):
         """
         Mark as pending_review (awaiting importer decision), lock the car, and
         make sure the buyer↔importer conversation exists.
+
+        The status change and the car lock commit together or not at all, with
+        the car row locked so two buyers paying at once cannot both win.
+        Raises CarAlreadyReserved if a different reservation holds the car.
         """
-        self.status = 'pending_review'
-        self.save(update_fields=['status', 'updated_at'])
-        self._lock_car()
+        with transaction.atomic():
+            car = self._locked_car()
+            if car.is_reserved and car.current_reservation_id not in (None, self.pk):
+                raise CarAlreadyReserved(car.pk)
+            self.status = 'pending_review'
+            self.save(update_fields=['status', 'updated_at'])
+            self._lock_car()
 
         # Imported lazily: the helper lives with the reservation views and
         # importing it at module scope would create a models↔views cycle.
@@ -512,11 +571,13 @@ class Reservation(models.Model):
 
     def cancel(self, by: str, reason: str = ''):
         """Cancel and unlock the car."""
-        self.status = f'cancelled_by_{by}'
-        self.cancelled_at = timezone.now()
-        self.cancellation_reason = reason
-        self.save(update_fields=['status', 'cancelled_at', 'cancellation_reason', 'updated_at'])
-        self._release_car()
+        with transaction.atomic():
+            self._locked_car()
+            self.status = f'cancelled_by_{by}'
+            self.cancelled_at = timezone.now()
+            self.cancellation_reason = reason
+            self.save(update_fields=['status', 'cancelled_at', 'cancellation_reason', 'updated_at'])
+            self._release_car()
 
     def convert_to_order(self, order):
         """Mark as converted and link to the ImportOrder."""
@@ -526,11 +587,13 @@ class Reservation(models.Model):
 
     def expire(self):
         """Mark as expired and release the car back to the market."""
-        self.status = 'expired'
-        self.cancelled_at = timezone.now()
-        self.cancellation_reason = 'انتهت صلاحية الحجز — لم يستجب المستورد خلال 7 أيام'
-        self.save(update_fields=['status', 'cancelled_at', 'cancellation_reason', 'updated_at'])
-        self._release_car()
+        with transaction.atomic():
+            self._locked_car()
+            self.status = 'expired'
+            self.cancelled_at = timezone.now()
+            self.cancellation_reason = 'انتهت صلاحية الحجز — لم يستجب المستورد خلال 7 أيام'
+            self.save(update_fields=['status', 'cancelled_at', 'cancellation_reason', 'updated_at'])
+            self._release_car()
 
     @property
     def expires_at(self):

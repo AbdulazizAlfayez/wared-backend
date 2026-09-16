@@ -2,6 +2,7 @@
 Serializers for the Import Order & Tracking system (Phase C) + Reservations (Phase M3).
 """
 from rest_framework import serializers
+from rest_framework.exceptions import APIException
 
 from cars.models import Listing
 from .models import ImportOrder, ImportTimeline, OrderDocument, Reservation
@@ -618,11 +619,13 @@ class ReservationListSerializer(serializers.ModelSerializer):
 class ReservationDetailSerializer(ReservationListSerializer):
     importer_contact = serializers.SerializerMethodField()
     buyer_info       = serializers.SerializerMethodField()
+    # Id of the ImportOrder this reservation became on accept, else null.
+    converted_order  = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta(ReservationListSerializer.Meta):
         fields = ReservationListSerializer.Meta.fields + [
             'payment_reference', 'buyer_notes', 'cancellation_reason',
-            'importer_contact', 'buyer_info',
+            'importer_contact', 'buyer_info', 'converted_order',
         ]
 
     def get_importer_contact(self, obj):
@@ -645,6 +648,13 @@ class ReservationDetailSerializer(ReservationListSerializer):
         }
 
 
+class CarCurrentlyReserved(APIException):
+    """409 — another buyer's reservation holds this car."""
+    status_code = 409
+    default_detail = 'This car is currently reserved.'
+    default_code = 'car_reserved'
+
+
 class CreateReservationSerializer(serializers.Serializer):
     car_id         = serializers.IntegerField()
     payment_method = serializers.ChoiceField(choices=Reservation.PAYMENT_METHOD_CHOICES, required=False, default='mada')
@@ -656,12 +666,6 @@ class CreateReservationSerializer(serializers.Serializer):
             car = Listing.objects.get(pk=value, is_active=True)
         except Listing.DoesNotExist:
             raise serializers.ValidationError(_('Car not found or not available.'))
-        if car.is_reserved:
-            raise serializers.ValidationError(_('This car is currently reserved.'))
-        if car.import_status not in ('available', 'ready_for_delivery'):
-            raise serializers.ValidationError(
-                _('This car is not available for reservation (status: %(status)s).') % {'status': car.import_status}
-            )
         self._car = car
         return value
 
@@ -685,9 +689,14 @@ class CreateReservationSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 _('You already have an active reservation for this car.')
             )
-        if blocking.exists():
-            raise serializers.ValidationError(
-                _('This car is currently reserved.')
-            )
+        # Someone else holds the car. The app should never get here — a
+        # reserved car is hidden from other buyers — so this is a safety net,
+        # and a 409 rather than a validation error.
+        if car.is_reserved or blocking.exists():
+            raise CarCurrentlyReserved()
+        if car.import_status not in ('available', 'ready_for_delivery'):
+            raise serializers.ValidationError({'car_id': [
+                _('This car is not available for reservation (status: %(status)s).') % {'status': car.import_status}
+            ]})
         data['_car'] = car
         return data

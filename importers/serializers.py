@@ -41,7 +41,9 @@ class _ImporterDetailBase(serializers.ModelSerializer):
 
     def get_active_listings_count(self, obj):
         from cars.models import Listing
+        from cars.visibility import public_market_q
         return Listing.objects.filter(
+            public_market_q(),
             owner=obj.user,
             is_active=True,
             import_status='available',
