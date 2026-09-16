@@ -11,10 +11,22 @@ Business rule (WARED):
   - When the reservation/order ends without a purchase the lock is released
     (orders.models) and the car satisfies this rule again automatically.
 
-Every public listing queryset — list, detail, count, compare, search,
-filter-options, by-country, nearby/map, featured/popular, showroom and
-importer inventories, saved searches, favorites, recently viewed, social —
-filters on `public_market_q(user)`. Do not add a second rule anywhere else.
+Every public listing queryset filters on `public_market_q(user, browse=...)`.
+Do not add a second rule anywhere else.
+
+  browse=True  — feeds and grids: list (Home, Discover, search, count),
+                 compare, autocomplete, popular, featured, nearby, map pins,
+                 imported-cars list/arriving, showroom and importer
+                 inventories, saved searches, the assistant's search.
+                 A reserved car is shown to NO ONE here but staff — not even
+                 its buyer or importer, who reach it through detail and their
+                 reservations/orders pages.
+  browse=False — opening a specific car: detail, images, likes/comments,
+                 favorites, recently viewed. The buyer, the importer and staff
+                 keep access; everyone else gets a 404.
+
+filter-options and by-country are shared caches and use public_market_q()
+with no user.
 """
 from django.db.models import Exists, OuterRef, Q
 
@@ -47,13 +59,15 @@ def is_staff_user(user):
     )
 
 
-def public_market_q(user=None):
+def public_market_q(user=None, browse=False):
     """
-    Q object selecting the listings *user* may see in any public surface.
+    Q object selecting the listings *user* may see.
 
     - Anonymous / user=None: on-market cars only.
-    - Authenticated: on-market cars, plus their own listings, plus cars they
-      hold a live reservation or an active order on.
+    - Authenticated, browse=False: on-market cars, plus their own listings,
+      plus cars they hold a live reservation or an active order on.
+    - Authenticated, browse=True: on-market cars, plus their own listings that
+      are NOT locked by a reservation or deal (e.g. drafts awaiting approval).
     - Staff: everything.
 
     Built from EXISTS subqueries rather than joins, so it never duplicates
@@ -71,24 +85,26 @@ def public_market_q(user=None):
     active_order = ImportOrder.objects.filter(
         car=OuterRef('pk'), status__in=ACTIVE_ORDER_STATUSES,
     )
-    q = (
-        Q(status='approved') & Q(is_active=True)
-        & Q(is_reserved=False)
+    unlocked = (
+        Q(is_reserved=False)
         & ~Q(import_status__in=OFF_MARKET_IMPORT_STATUSES)
         & ~Exists(paid_reservation)
         & ~Exists(active_order)
     )
+    q = Q(status='approved') & Q(is_active=True) & unlocked
 
-    if user is not None and getattr(user, 'is_authenticated', False):
-        q |= (
-            (Q(owner=user) & Q(is_active=True))
-            | Exists(Reservation.objects.filter(
-                car=OuterRef('pk'), buyer=user,
-                status__in=LIVE_RESERVATION_STATUSES,
-            ))
-            | Exists(active_order.filter(buyer=user))
-        )
-    return q
+    if user is None or not getattr(user, 'is_authenticated', False):
+        return q
+    if browse:
+        return q | (Q(owner=user) & Q(is_active=True) & unlocked)
+    return q | (
+        (Q(owner=user) & Q(is_active=True))
+        | Exists(Reservation.objects.filter(
+            car=OuterRef('pk'), buyer=user,
+            status__in=LIVE_RESERVATION_STATUSES,
+        ))
+        | Exists(active_order.filter(buyer=user))
+    )
 
 
 def reservation_state(listing, user):
@@ -106,8 +122,18 @@ def reservation_state(listing, user):
     if user is None or not getattr(user, 'is_authenticated', False):
         return None
     reservation = listing.current_reservation
-    if reservation is not None and reservation.buyer_id == user.pk:
-        return 'reserved_by_you'
+    if reservation is not None:
+        if reservation.buyer_id == user.pk:
+            return 'reserved_by_you'
+    else:
+        # Lock without a current_reservation pointer (rows written before
+        # pay/ went through activate()): fall back to the reservation rows.
+        from orders.models import Reservation
+        if Reservation.objects.filter(
+            car_id=listing.pk, buyer_id=user.pk,
+            status__in=PAID_RESERVATION_STATUSES + ('converted_to_order',),
+        ).exists():
+            return 'reserved_by_you'
     if listing.owner_id == user.pk or is_staff_user(user):
         return 'reserved'
     return None

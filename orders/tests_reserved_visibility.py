@@ -3,9 +3,10 @@ Reserved-car visibility (fix/reserved-visibility).
 
 Rule under test: from the moment a reservation is PAID (pending_review) until
 it is cancelled, rejected or expired — or its order is cancelled/refunded —
-the car is invisible to everyone except the buyer who reserved it, the
-importer who owns it, and staff. Every public listing surface goes through
-cars.visibility.public_market_q(user); each gets a test here.
+the car is gone from every browse surface for everyone but staff (even its
+buyer and importer), and opening it directly works only for the buyer, the
+importer and staff. Every public listing surface goes through
+cars.visibility.public_market_q(user, browse=...); each gets a test here.
 """
 from datetime import timedelta
 from unittest import mock
@@ -63,18 +64,15 @@ class ReservedFixture:
         self.client.force_authenticate(user=user)
         return self.client
 
-    def assert_hidden_from_public(self, url, *, ids=_ids):
-        for user in (None, self.stranger):
+    def assert_browse_hidden(self, url, *, ids=_ids):
+        """Browse: hidden from everyone — buyer and importer included — but staff."""
+        for user in (None, self.stranger, self.buyer, self.importer):
             resp = self.as_(user).get(url)
             self.assertEqual(resp.status_code, 200, (url, user, resp.data))
             self.assertNotIn(self.car.pk, ids(resp), (url, user))
             self.assertIn(self.other.pk, ids(resp), (url, user))
-
-    def assert_visible_to_parties(self, url, *, ids=_ids):
-        for user in (self.buyer, self.importer, self.staff):
-            resp = self.as_(user).get(url)
-            self.assertEqual(resp.status_code, 200, (url, user, resp.data))
-            self.assertIn(self.car.pk, ids(resp), (url, user))
+        resp = self.as_(self.staff).get(url)
+        self.assertIn(self.car.pk, ids(resp), (url, 'staff'))
 
 
 # ---------------------------------------------------------------------------
@@ -84,19 +82,19 @@ class ReservedFixture:
 class PublicEndpointTests(ReservedFixture, APITestCase):
 
     def test_listings_list(self):
-        self.assert_hidden_from_public('/api/listings/')
-        self.assert_visible_to_parties('/api/listings/')
+        self.assert_browse_hidden('/api/listings/')
 
     def test_listings_list_cursor_mode(self):
         url = '/api/listings/?pagination=cursor'
-        self.assert_hidden_from_public(url)
-        self.assert_visible_to_parties(url)
+        self.assert_browse_hidden(url)
 
     def test_listings_count(self):
         anon = self.as_(None).get('/api/listings/').data['count']
         self.assertEqual(anon, 1)
         self.assertEqual(self.as_(self.stranger).get('/api/listings/').data['count'], 1)
-        self.assertEqual(self.as_(self.buyer).get('/api/listings/').data['count'], 2)
+        self.assertEqual(self.as_(self.buyer).get('/api/listings/').data['count'], 1)
+        self.assertEqual(self.as_(self.importer).get('/api/listings/').data['count'], 1)
+        self.assertEqual(self.as_(self.staff).get('/api/listings/').data['count'], 2)
 
     def test_listings_detail_404_for_non_party(self):
         url = f'/api/listings/{self.car.pk}/'
@@ -106,8 +104,7 @@ class PublicEndpointTests(ReservedFixture, APITestCase):
             self.assertEqual(self.as_(user).get(url).status_code, 200, user)
 
     def test_imported_cars_list(self):
-        self.assert_hidden_from_public('/api/imported-cars/')
-        self.assert_visible_to_parties('/api/imported-cars/')
+        self.assert_browse_hidden('/api/imported-cars/')
 
     def test_imported_cars_detail_404_for_non_party(self):
         url = f'/api/imported-cars/{self.car.pk}/'
@@ -126,44 +123,40 @@ class PublicEndpointTests(ReservedFixture, APITestCase):
         self.assertNotIn(shipping_x.pk, _ids(resp))
         self.assertIn(shipping_y.pk, _ids(resp))
         resp = self.as_(self.buyer).get('/api/imported-cars/arriving/')
-        self.assertIn(shipping_x.pk, _ids(resp))
+        self.assertNotIn(shipping_x.pk, _ids(resp))
 
     def test_compare(self):
         url = f'/api/listings/compare/?ids={self.car.pk},{self.other.pk}'
-        self.assert_hidden_from_public(url)
-        self.assert_visible_to_parties(url)
+        self.assert_browse_hidden(url)
 
     def test_search(self):
         url = '/api/listings/?search=Lamborghini'
-        for user in (None, self.stranger):
-            self.assertEqual(_ids(self.as_(user).get(url)), [])
-        self.assertEqual(_ids(self.as_(self.buyer).get(url)), [self.car.pk])
+        for user in (None, self.stranger, self.buyer, self.importer):
+            self.assertEqual(_ids(self.as_(user).get(url)), [], user)
+        self.assertEqual(_ids(self.as_(self.staff).get(url)), [self.car.pk])
 
     def test_autocomplete(self):
         url = '/api/listings/autocomplete/?q=Lambo'
         self.assertEqual(self.as_(self.stranger).get(url).data['suggestions'], [])
         self.assertEqual(self.as_(None).get(url).data['suggestions'], [])
+        self.assertEqual(self.as_(self.buyer).get(url).data['suggestions'], [])
         self.assertEqual(
-            self.as_(self.buyer).get(url).data['suggestions'],
+            self.as_(self.staff).get(url).data['suggestions'],
             [{'type': 'make', 'value': 'Lamborghini'}],
         )
 
     def test_popular(self):
-        self.assert_hidden_from_public('/api/listings/popular/')
-        self.assert_visible_to_parties('/api/listings/popular/')
+        self.assert_browse_hidden('/api/listings/popular/')
 
     def test_featured(self):
-        self.assert_hidden_from_public('/api/listings/featured/')
-        self.assert_visible_to_parties('/api/listings/featured/')
+        self.assert_browse_hidden('/api/listings/featured/')
 
     def test_nearby(self):
         url = '/api/listings/nearby/?lat=24.71&lng=46.67&radius=10'
-        self.assert_hidden_from_public(url)
-        self.assert_visible_to_parties(url)
+        self.assert_browse_hidden(url)
 
     def test_map_pins(self):
-        self.assert_hidden_from_public('/api/listings/map-pins/')
-        self.assert_visible_to_parties('/api/listings/map-pins/')
+        self.assert_browse_hidden('/api/listings/map-pins/')
 
     def test_filter_options(self):
         makes = lambda resp: [m['value'] for m in resp.data['makes']]
@@ -191,16 +184,14 @@ class PublicEndpointTests(ReservedFixture, APITestCase):
         self.assertEqual(row['reserved_cars'], 0)
 
     def test_showroom_listings(self):
-        self.assert_hidden_from_public(f'/api/showrooms/{self.showroom.pk}/listings/')
-        self.assert_visible_to_parties(f'/api/showrooms/{self.showroom.pk}/listings/')
+        self.assert_browse_hidden(f'/api/showrooms/{self.showroom.pk}/listings/')
 
     def test_importer_inventory(self):
         profile, _ = ImporterProfile.objects.get_or_create(
             user=self.importer, defaults={'business_name': 'Imp'},
         )
         url = f'/api/importers/{profile.pk}/inventory/'
-        self.assert_hidden_from_public(url)
-        self.assert_visible_to_parties(url)
+        self.assert_browse_hidden(url)
 
     def test_saved_search_results(self):
         search = SavedSearch.objects.create(user=self.stranger, name='all', filters={})
@@ -243,7 +234,7 @@ class PublicEndpointTests(ReservedFixture, APITestCase):
         from assistant.services import _execute_search_cars
         hits = lambda user: [c['id'] for c in _execute_search_cars({}, user)['cars']]
         self.assertNotIn(self.car.pk, hits(self.stranger))
-        self.assertIn(self.car.pk, hits(self.buyer))
+        self.assertNotIn(self.car.pk, hits(self.buyer))
 
 
 def _ids_count(resp, search_pk):
@@ -462,13 +453,23 @@ class SerializerFieldTests(ReservedFixture, APITestCase):
         return {row['id']: row['reservation_state'] for row in rows}
 
     def test_list_state(self):
-        self.assertEqual(self._state(self.buyer, '/api/listings/')[self.car.pk], 'reserved_by_you')
-        self.assertEqual(self._state(self.importer, '/api/listings/')[self.car.pk], 'reserved')
+        # Only staff see a reserved car in the list at all.
+        self.assertNotIn(self.car.pk, self._state(self.buyer, '/api/listings/'))
+        self.assertNotIn(self.car.pk, self._state(self.importer, '/api/listings/'))
         self.assertEqual(self._state(self.staff, '/api/listings/')[self.car.pk], 'reserved')
         self.assertIsNone(self._state(self.stranger, '/api/listings/')[self.other.pk])
         self.assertIsNone(self._state(None, '/api/listings/')[self.other.pk])
 
     def test_detail_state(self):
+        url = f'/api/listings/{self.car.pk}/'
+        self.assertEqual(self._state(self.buyer, url)[self.car.pk], 'reserved_by_you')
+        self.assertEqual(self._state(self.importer, url)[self.car.pk], 'reserved')
+        self.assertEqual(self._state(self.staff, url)[self.car.pk], 'reserved')
+
+    def test_detail_state_when_the_lock_has_no_current_reservation(self):
+        # Pre-activate() data: car locked, pointer missing.
+        self.car.current_reservation = None
+        self.car.save(update_fields=['current_reservation'])
         url = f'/api/listings/{self.car.pk}/'
         self.assertEqual(self._state(self.buyer, url)[self.car.pk], 'reserved_by_you')
         self.assertEqual(self._state(self.importer, url)[self.car.pk], 'reserved')
@@ -488,3 +489,132 @@ class SerializerFieldTests(ReservedFixture, APITestCase):
         # Still reserved_by_you while the order is live.
         detail = self.as_(self.buyer).get(f'/api/listings/{self.car.pk}/').data
         self.assertEqual(detail['reservation_state'], 'reserved_by_you')
+
+
+# ---------------------------------------------------------------------------
+# Regression: the Home grid showed a reserved car (fix/reserved-browse)
+# ---------------------------------------------------------------------------
+
+class HomeGridRegressionTests(APITestCase):
+    """reserve → pay → the list excludes the car for everyone but staff → cancel → back."""
+
+    def setUp(self):
+        cache.clear()
+        self.importer = make_importer()
+        self.buyer = make_buyer()
+        self.other_buyer = make_buyer(email='b@test.com', name='B')
+        self.car = make_listing(self.importer)
+
+    def _list_ids(self, user, query='page_size=100'):
+        self.client.force_authenticate(user=user)
+        return _ids(self.client.get(f'/api/listings/?{query}'))
+
+    def _reserve_and_pay(self):
+        self.client.force_authenticate(user=self.buyer)
+        rid = self.client.post('/api/reservations/', {'car_id': self.car.pk}, format='json').data['id']
+        provider = mock.Mock()
+        provider.charge.return_value = mock.Mock(
+            success=True, provider='stub', transaction_id='STUB', error_message='',
+        )
+        with mock.patch('payments.views.get_payment_provider', return_value=provider):
+            resp = self.client.post(f'/api/reservations/{rid}/pay/', {'method': 'mada'}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        return rid
+
+    def test_reserve_pay_cancel_round_trip(self):
+        for user in (self.other_buyer, self.buyer, None):
+            self.assertIn(self.car.pk, self._list_ids(user))
+
+        rid = self._reserve_and_pay()
+
+        for query in ('page_size=100', 'pagination=cursor&page_size=20', 'search=Camry'):
+            for user in (self.other_buyer, self.buyer, self.importer, None):
+                self.assertNotIn(self.car.pk, self._list_ids(user, query), (query, user))
+        self.client.force_authenticate(user=self.other_buyer)
+        self.assertEqual(self.client.get('/api/listings/').data['count'], 0)
+        # The buyer still reaches it directly, with the right state.
+        self.client.force_authenticate(user=self.buyer)
+        detail = self.client.get(f'/api/listings/{self.car.pk}/')
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data['reservation_state'], 'reserved_by_you')
+        self.client.force_authenticate(user=self.other_buyer)
+        self.assertEqual(self.client.get(f'/api/listings/{self.car.pk}/').status_code, 404)
+
+        self.client.force_authenticate(user=self.buyer)
+        self.assertEqual(self.client.post(f'/api/reservations/{rid}/cancel/').status_code, 200)
+
+        for user in (self.other_buyer, self.buyer, None):
+            self.assertIn(self.car.pk, self._list_ids(user))
+        self.client.force_authenticate(user=self.other_buyer)
+        self.assertEqual(self.client.get('/api/listings/').data['count'], 1)
+
+    def test_owner_still_sees_their_own_unlocked_draft_in_the_list(self):
+        draft = make_listing(self.importer, title='Draft', status='pending')
+        self.assertIn(draft.pk, self._list_ids(self.importer))
+        self.assertNotIn(draft.pk, self._list_ids(self.other_buyer))
+
+
+class MarketCacheInvalidationTests(APITestCase):
+    def test_order_and_reservation_changes_bust_the_facet_caches(self):
+        from cars.filter_options import CACHE_KEY
+        from source_countries.signals import CACHE_KEY_BY_COUNTRY
+        importer = make_importer()
+        buyer = make_buyer()
+        car = make_listing(importer)
+        for make_change in (
+            lambda: ImportOrder.objects.create(car=car, buyer=buyer, importer=importer,
+                                               total_price=1, status='confirmed'),
+            lambda: make_reservation(car, buyer, importer, 'pending_review'),
+        ):
+            cache.set(CACHE_KEY, 'stale')
+            cache.set(CACHE_KEY_BY_COUNTRY, 'stale')
+            make_change()
+            self.assertIsNone(cache.get(CACHE_KEY))
+            self.assertIsNone(cache.get(CACHE_KEY_BY_COUNTRY))
+
+
+class BackfillMigrationTests(TestCase):
+    def _run(self):
+        import importlib
+        from django.apps import apps
+        mod = importlib.import_module('orders.migrations.0006_backfill_reservation_locks')
+        mod.backfill(apps, None)
+
+    def test_pending_review_without_lock_is_locked(self):
+        importer = make_importer()
+        buyer = make_buyer()
+        car = make_listing(importer, import_status='ready_for_delivery')
+        res = make_reservation(car, buyer, importer, 'pending_review')
+        self._run()
+        car.refresh_from_db()
+        res.refresh_from_db()
+        self.assertTrue(car.is_reserved)
+        self.assertEqual(car.current_reservation_id, res.pk)
+        self.assertEqual(car.import_status, 'reserved')
+        self.assertEqual(res.car_import_status_before, 'ready_for_delivery')
+        # ...and release now restores it.
+        res.cancel(by='buyer')
+        car.refresh_from_db()
+        self.assertEqual((car.is_reserved, car.import_status), (False, 'ready_for_delivery'))
+
+    def test_converted_with_live_order_gets_the_pointer_but_keeps_import_status(self):
+        importer = make_importer()
+        buyer = make_buyer()
+        car = make_listing(importer, import_status='shipping', is_reserved=True)
+        order = ImportOrder.objects.create(car=car, buyer=buyer, importer=importer,
+                                           total_price=1, status='shipped')
+        res = make_reservation(car, buyer, importer, 'converted_to_order', converted_order=order)
+        self._run()
+        car.refresh_from_db()
+        self.assertEqual(car.current_reservation_id, res.pk)
+        self.assertEqual(car.import_status, 'shipping')
+
+    def test_ended_reservations_are_left_alone(self):
+        importer = make_importer()
+        buyer = make_buyer()
+        car = make_listing(importer)
+        make_reservation(car, buyer, importer, 'cancelled_by_buyer')
+        self._run()
+        car.refresh_from_db()
+        self.assertFalse(car.is_reserved)
+        self.assertIsNone(car.current_reservation_id)

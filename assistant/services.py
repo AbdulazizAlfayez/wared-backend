@@ -180,7 +180,7 @@ def _execute_search_cars(params, user):
     from cars.models import Listing
     from cars.visibility import public_market_q
 
-    qs = Listing.objects.filter(public_market_q(user)).prefetch_related('images')
+    qs = Listing.objects.filter(public_market_q(user, browse=True)).prefetch_related('images')
 
     if v := params.get('make'):
         qs = qs.filter(make__icontains=v)
