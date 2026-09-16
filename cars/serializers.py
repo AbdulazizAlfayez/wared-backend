@@ -938,7 +938,7 @@ class ShowroomDetailSerializer(BilingualMixin, serializers.ModelSerializer):
         from .visibility import public_market_q
         request = self.context.get('request')
         qs = Listing.objects.filter(
-            public_market_q(getattr(request, 'user', None)),
+            public_market_q(getattr(request, 'user', None), browse=True),
             showroom=obj, status='approved', is_active=True,
         ).order_by('-created_at')[:4]
         return [
@@ -1300,7 +1300,7 @@ class SavedSearchSerializer(serializers.ModelSerializer):
         from .visibility import public_market_q
         request = self.context.get('request')
         base_qs = Listing.objects.filter(
-            public_market_q(getattr(request, 'user', None)),
+            public_market_q(getattr(request, 'user', None), browse=True),
             status='approved', is_active=True,
         )
         return ListingFilter(obj.filters, queryset=base_qs).qs.count()

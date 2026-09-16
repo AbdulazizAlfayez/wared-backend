@@ -58,10 +58,10 @@ class ImporterInventoryView(ListAPIView):
             profile = ImporterProfile.objects.get(pk=self.kwargs['pk'])
         except ImporterProfile.DoesNotExist:
             return Listing.objects.none()
-        # 'reserved' stays in the status list for the importer's own view;
-        # public_market_q() hides a reserved car from everyone else.
+        # Browse: a reserved car is hidden here from everyone but staff —
+        # including the importer, who has their dashboard for it.
         return Listing.objects.filter(
-            public_market_q(self.request.user),
+            public_market_q(self.request.user, browse=True),
             owner=profile.user,
             is_active=True,
             import_status__in=['available', 'reserved', 'shipping'],
