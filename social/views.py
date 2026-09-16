@@ -49,7 +49,7 @@ def toggle_like(request, listing_id):
     Idempotent-safe in both directions: a double tap from a flaky connection
     settles on one row via get_or_create, and a second delete is a no-op.
     """
-    listing = get_public_listing_or_404(listing_id)
+    listing = get_public_listing_or_404(listing_id, request.user)
 
     like, created = ListingLike.objects.get_or_create(user=request.user, listing=listing)
     if not created:
@@ -95,7 +95,9 @@ class ListingCommentListCreateView(ListCreateAPIView):
 
     def get_listing(self):
         if not hasattr(self, '_listing'):
-            self._listing = get_public_listing_or_404(self.kwargs['listing_id'])
+            self._listing = get_public_listing_or_404(
+                self.kwargs['listing_id'], self.request.user,
+            )
         return self._listing
 
     def get_serializer_context(self):

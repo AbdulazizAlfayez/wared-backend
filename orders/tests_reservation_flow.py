@@ -193,12 +193,14 @@ class ReservationDuplicateGuardTests(APITestCase):
     def test_blocks_second_reservation_while_one_is_pending_payment(self):
         make_reservation(self.car, self.buyer, self.importer, 'pending_payment')
         resp = self._create(self.other_buyer)
-        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(resp.data['detail'], 'This car is currently reserved.')
 
     def test_blocks_second_reservation_while_one_is_pending_review(self):
         make_reservation(self.car, self.buyer, self.importer, 'pending_review')
         resp = self._create(self.other_buyer)
-        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(resp.data['detail'], 'This car is currently reserved.')
 
     def test_blocks_the_same_buyer_reserving_twice(self):
         make_reservation(self.car, self.buyer, self.importer, 'pending_review')

@@ -99,7 +99,7 @@ class ImportedCarsByCountryView(APIView):
                 public_market_q(),
                 source_country=country.code,
                 import_status__in=self.PUBLIC_STATUSES,
-            ).distinct()
+            )
             total = cars.count()
             if total == 0 and country.code == "other":
                 continue  # skip "other" when empty

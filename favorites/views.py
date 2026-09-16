@@ -8,6 +8,7 @@ from drf_spectacular.utils import extend_schema
 from .models import Favorite
 from cars.models import Listing
 from cars.serializers import ListingSerializer
+from cars.visibility import public_market_q
 
 
 class FavoritesPagination(PageNumberPagination):
@@ -19,7 +20,7 @@ class FavoritesPagination(PageNumberPagination):
 @permission_classes([IsAuthenticated])
 def toggle_favorite(request, listing_id):
     """Toggle favorite on/off for a listing. Returns { is_favorited: bool }."""
-    if not Listing.objects.filter(id=listing_id).exists():
+    if not Listing.objects.filter(public_market_q(request.user), id=listing_id).exists():
         return Response({'error': 'Listing not found'}, status=status.HTTP_404_NOT_FOUND)
 
     fav, created = Favorite.objects.get_or_create(
@@ -47,7 +48,7 @@ def favorites_list(request):
             listing_id = int(listing_id)
         except (TypeError, ValueError):
             return Response({'error': 'listing is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not Listing.objects.filter(id=listing_id).exists():
+        if not Listing.objects.filter(public_market_q(request.user), id=listing_id).exists():
             return Response({'error': 'Listing not found'}, status=status.HTTP_404_NOT_FOUND)
         fav, created = Favorite.objects.get_or_create(
             user=request.user, listing_id=listing_id
@@ -75,9 +76,12 @@ def favorites_list(request):
         .order_by('-created_at')
         .values_list('listing_id', flat=True)
     )
-    # Preserve favorite ordering
-    listings = Listing.objects.filter(id__in=fav_listing_ids).select_related(
-        'owner', 'city_obj'
+    # Preserve favorite ordering. A favorited car that has since been reserved
+    # by someone else drops out, and comes back if that reservation ends.
+    listings = Listing.objects.filter(
+        public_market_q(request.user), id__in=fav_listing_ids,
+    ).select_related(
+        'owner', 'city_obj', 'current_reservation',
     ).prefetch_related('images')
 
     # Manual ordering to match favorite creation order
@@ -108,5 +112,8 @@ def favorite_delete(request, pk):
 @permission_classes([IsAuthenticated])
 def favorites_count(request):
     """GET /api/favorites/count/ - total favorite count for badge."""
-    count = Favorite.objects.filter(user=request.user).count()
+    count = Favorite.objects.filter(
+        user=request.user,
+        listing__in=Listing.objects.filter(public_market_q(request.user)),
+    ).count()
     return Response({'count': count})

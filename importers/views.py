@@ -53,15 +53,21 @@ class ImporterInventoryView(ListAPIView):
 
     def get_queryset(self):
         from cars.models import Listing
+        from cars.visibility import public_market_q
         try:
             profile = ImporterProfile.objects.get(pk=self.kwargs['pk'])
         except ImporterProfile.DoesNotExist:
             return Listing.objects.none()
+        # 'reserved' stays in the status list for the importer's own view;
+        # public_market_q() hides a reserved car from everyone else.
         return Listing.objects.filter(
+            public_market_q(self.request.user),
             owner=profile.user,
             is_active=True,
             import_status__in=['available', 'reserved', 'shipping'],
-        ).select_related('owner', 'city_obj').prefetch_related('images')
+        ).select_related(
+            'owner', 'city_obj', 'current_reservation',
+        ).prefetch_related('images')
 
     def get_serializer_class(self):
         from cars.serializers import ListingSerializer

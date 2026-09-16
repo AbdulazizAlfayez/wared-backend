@@ -86,6 +86,16 @@ class SocialCountsMixin:
             )
         return obj.id in self._liked_ids
 
+    def get_reservation_state(self, obj):
+        """
+        null | "reserved_by_you" | "reserved" — see
+        cars.visibility.reservation_state. Lets the app show "you reserved
+        this" / "reserved" instead of hitting a payment error.
+        """
+        from .visibility import reservation_state
+        request = self.context.get('request')
+        return reservation_state(obj, getattr(request, 'user', None))
+
 
 # ---------------------------------------------------------------------------
 # Listing Images
@@ -178,6 +188,9 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
     comment_count = serializers.SerializerMethodField(read_only=True)
     is_liked      = serializers.SerializerMethodField(read_only=True)
 
+    # Reservation lock as seen by the requesting user
+    reservation_state = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Listing
         fields = (
@@ -220,7 +233,7 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'transportation_cost', 'total_landed_cost', 'final_price_sar',
             'cost_breakdown',
             # Import — Status & Reservation
-            'import_status', 'is_reserved',
+            'import_status', 'is_reserved', 'reservation_state',
             # Import — Shipping Information
             'vessel_name', 'shipping_line', 'bill_of_lading_number', 'container_number',
             'port_of_origin', 'port_of_entry', 'estimated_arrival_date', 'actual_arrival_date',
@@ -250,6 +263,7 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'owner_verified', 'owner_verification_level',
             'cost_breakdown', 'is_favorited_by_me',
             'like_count', 'comment_count', 'is_liked',
+            'reservation_state',
         )
 
     def get_owner(self, obj):
@@ -560,13 +574,16 @@ class ListingListSerializer(BilingualMixin, SocialCountsMixin, serializers.Model
     comment_count = serializers.SerializerMethodField(read_only=True)
     is_liked      = serializers.SerializerMethodField(read_only=True)
 
+    # Reservation lock as seen by the requesting user
+    reservation_state = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Listing
         fields = (
             'id', 'title', 'make', 'model', 'year', 'price', 'mileage',
             'city', 'condition', 'fuel_type', 'transmission', 'body_type',
             'imported_from', 'status', 'import_status', 'is_reserved',
-            'final_price_sar',
+            'reservation_state', 'final_price_sar',
             'owner_id', 'primary_image',
             'make_display', 'model_display', 'city_display',
             'is_featured', 'is_highlighted', 'is_homepage',
@@ -918,8 +935,11 @@ class ShowroomDetailSerializer(BilingualMixin, serializers.ModelSerializer):
         return hours.opening_time <= current_time <= hours.closing_time
 
     def get_listings_preview(self, obj):
+        from .visibility import public_market_q
+        request = self.context.get('request')
         qs = Listing.objects.filter(
-            showroom=obj, status='approved', is_active=True
+            public_market_q(getattr(request, 'user', None)),
+            showroom=obj, status='approved', is_active=True,
         ).order_by('-created_at')[:4]
         return [
             {
@@ -1277,7 +1297,12 @@ class SavedSearchSerializer(serializers.ModelSerializer):
 
     def get_results_count(self, obj):
         from .filters import ListingFilter
-        base_qs = Listing.objects.filter(status='approved', is_active=True)
+        from .visibility import public_market_q
+        request = self.context.get('request')
+        base_qs = Listing.objects.filter(
+            public_market_q(getattr(request, 'user', None)),
+            status='approved', is_active=True,
+        )
         return ListingFilter(obj.filters, queryset=base_qs).qs.count()
 
     def validate_filters(self, value):

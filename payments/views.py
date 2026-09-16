@@ -3,7 +3,8 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from orders.models import Reservation
+from orders.models import CarAlreadyReserved, Reservation
+from orders.serializers import CarCurrentlyReserved
 from .models import PaymentTransaction
 from .providers import get_payment_provider
 
@@ -29,6 +30,11 @@ class ReservationPayView(APIView):
 
         if reservation.payment_status == 'succeeded':
             return Response({'error': 'Already paid.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Never charge for a car another buyer's paid reservation already holds.
+        car = reservation.car
+        if car.is_reserved and car.current_reservation_id not in (None, reservation.pk):
+            raise CarCurrentlyReserved()
 
         method = request.data.get('method', '')
         if method not in VALID_METHODS:
@@ -81,7 +87,11 @@ class ReservationPayView(APIView):
             # + import_status='reserved'). Doing it inline here used to leave
             # current_reservation NULL, so nothing could find the reservation
             # holding the lock.
-            reservation.activate()
+            try:
+                reservation.activate()
+            except CarAlreadyReserved:
+                # Lost a race with another buyer paying at the same moment.
+                raise CarCurrentlyReserved()
             car = reservation.car
 
             # Notify importer
