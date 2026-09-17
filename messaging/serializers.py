@@ -56,14 +56,14 @@ class MessageSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_content(self, obj):
-        from .utils import get_allow_contact, mask_contact_info
+        from .utils import contact_exchange_allowed, mask_contact_info
 
         request = self.context.get('request')
         # Admin/staff always see raw content
         if request and request.user.is_authenticated and request.user.is_staff:
             return obj.content
-        # If deposit-locked order exists, allow raw content
-        if get_allow_contact(obj.conversation):
+        # Balance confirmed on this conversation's order: raw content
+        if contact_exchange_allowed(obj.conversation):
             return obj.content
         # Otherwise mask
         masked, _ = mask_contact_info(obj.content)
@@ -103,6 +103,11 @@ class ConversationListSerializer(serializers.ModelSerializer):
     other_party  = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
+    # Scoped to this conversation's buyer, importer and listing — see
+    # messaging.utils.contact_exchange_allowed / conversation_deal.
+    can_exchange_contacts = serializers.SerializerMethodField()
+    deal         = serializers.SerializerMethodField()
+    my_role      = serializers.SerializerMethodField()
 
     class Meta:
         model  = Conversation
@@ -110,6 +115,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'id', 'listing', 'other_party', 'last_message',
             'last_message_preview', 'last_message_at',
             'unread_count', 'is_active', 'created_at', 'updated_at',
+            'can_exchange_contacts', 'deal', 'my_role',
         )
         read_only_fields = fields
 
@@ -150,6 +156,20 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'is_system':  msg.is_system,
             'created_at': msg.created_at,
         }
+
+    def get_can_exchange_contacts(self, obj):
+        from .utils import contact_exchange_allowed
+        return contact_exchange_allowed(obj)
+
+    def get_deal(self, obj):
+        from .utils import conversation_deal
+        return conversation_deal(obj)
+
+    def get_my_role(self, obj):
+        me = self._requester()
+        if me is None:
+            return None
+        return 'buyer' if obj.buyer_id == me.pk else 'seller'
 
     def get_unread_count(self, obj):
         me = self._requester()

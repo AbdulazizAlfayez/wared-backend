@@ -10,7 +10,7 @@ Service, not on perfect pattern matching.
 Public API:
     mask_contact_info(text) -> (masked_text, was_flagged)
     mask_conversation_messages(messages, sender_id) -> list[masked_text]
-    get_allow_contact(conversation) -> bool
+    contact_exchange_allowed(conversation) -> bool
 """
 
 import re
@@ -279,26 +279,21 @@ def mask_conversation_messages(
 # 6. Order-based contact gate
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_PAID_STATUSES = frozenset({
-    'deposit_paid', 'confirmed', 'sourcing', 'purchased',
-    'preparing_shipment', 'shipped', 'arrived_port', 'in_customs',
-    'customs_cleared', 'inspection', 'ready', 'delivered', 'completed',
-})
-
-
-def get_allow_contact(conversation) -> bool:
+def contact_exchange_allowed(conversation) -> bool:
     """
-    Return True once the buyer's FULL BALANCE for this car has been confirmed.
+    THE contact gate. True only once the buyer's full balance for this car has
+    been confirmed — a PaymentTransaction with payment_type='balance' and
+    status='succeeded' on the ImportOrder between exactly these two users for
+    exactly this listing (set by POST /api/orders/{id}/confirm-payment/).
 
-    Gated on a succeeded 'balance' PaymentTransaction, not on order status.
-    Order status is not a proxy for payment: accepting a reservation creates
-    the order already in 'confirmed', which previously unmasked phone numbers
-    the moment the importer clicked Accept — before a single riyal of the car
-    price had been paid, and while WARED still had to be the one taking the
-    payment.
+    A paid reservation fee, an accepted reservation, an order in 'confirmed',
+    or a balance transfer still under review all return False. Order status
+    is deliberately not consulted: accepting a reservation creates the order
+    already 'confirmed'.
 
-    Scoped to the conversation's own listing, so paying for one car does not
-    unmask contacts in an unrelated conversation with the same importer.
+    Every masking decision — storage, serializer, list endpoint, WebSocket
+    broadcast — and the `can_exchange_contacts` field go through this one
+    function.
     """
     from payments.models import PaymentTransaction
 
@@ -309,6 +304,88 @@ def get_allow_contact(conversation) -> bool:
         payment_type='balance',
         status='succeeded',
     ).exists()
+
+
+_LIVE_RESERVATION = frozenset({'pending_review', 'active'})
+_CANCELLED_RESERVATION = frozenset({'cancelled_by_buyer', 'cancelled_by_importer'})
+_CANCELLED_ORDER = frozenset({'cancelled', 'refunded'})
+
+
+def conversation_deal(conversation) -> dict:
+    """
+    Where the deal on this conversation's car stands, for exactly these two
+    parties. Clients render this rather than joining their own reservation or
+    order lists: an admin's order list holds every buyer's orders, and an
+    importer's holds every buyer's orders on their cars, so matching by car
+    alone attributes someone else's payment to this conversation.
+
+    stage:
+      none                  nothing committed (or reservation fee unpaid)
+      reserved              reservation paid, awaiting the importer
+      awaiting_payment      importer accepted; no balance transaction yet
+      payment_under_review  a balance transfer is pending confirmation
+      paid                  balance confirmed (contacts unlocked)
+      expired / cancelled   ended without a sale
+    """
+    from orders.models import ImportOrder, Reservation
+    from payments.models import PaymentTransaction
+
+    parties = {
+        'car_id': conversation.listing_id,
+        'buyer_id': conversation.buyer_id,
+        'importer_id': conversation.seller_id,
+    }
+    reservation = Reservation.objects.filter(**parties).order_by('-created_at').first()
+    order = ImportOrder.objects.filter(**parties).order_by('-created_at').first()
+
+    balance_status = 'none'
+    if order is not None:
+        balance = (
+            PaymentTransaction.objects
+            .filter(order=order, payment_type='balance')
+            .order_by('-created_at')
+            .first()
+        )
+        if balance is not None:
+            balance_status = balance.status
+
+    if order is not None:
+        if order.status in _CANCELLED_ORDER:
+            stage = 'cancelled'
+        elif balance_status == 'succeeded':
+            stage = 'paid'
+        elif balance_status == 'pending':
+            stage = 'payment_under_review'
+        else:
+            stage = 'awaiting_payment'
+    elif reservation is not None:
+        if reservation.status in _LIVE_RESERVATION:
+            stage = 'reserved'
+        elif reservation.status == 'converted_to_order':
+            stage = 'awaiting_payment'
+        elif reservation.status == 'expired':
+            stage = 'expired'
+        elif reservation.status in _CANCELLED_RESERVATION:
+            stage = 'cancelled'
+        else:
+            stage = 'none'
+    else:
+        stage = 'none'
+
+    return {
+        'stage': stage,
+        'reservation': None if reservation is None else {
+            'id': reservation.pk,
+            'status': reservation.status,
+            'hours_remaining': reservation.hours_remaining,
+            'expires_at': reservation.expires_at,
+        },
+        'order': None if order is None else {
+            'id': order.pk,
+            'status': order.status,
+            'balance_status': balance_status,
+        },
+    }
 
 
 def strict_digit_mask(text: str) -> tuple[str, bool]:

@@ -310,7 +310,7 @@ class ReservationConversationTests(APITestCase):
 
     def test_contacts_stay_masked_until_the_balance_is_paid(self):
         from messaging.models import Conversation
-        from messaging.utils import get_allow_contact
+        from messaging.utils import contact_exchange_allowed
 
         conv = Conversation.objects.create(
             listing=self.car, buyer=self.buyer, seller=self.importer
@@ -321,10 +321,10 @@ class ReservationConversationTests(APITestCase):
             status='confirmed',
         )
         # 'confirmed' alone must NOT unmask — that is what accept/ produces.
-        self.assertFalse(get_allow_contact(conv))
+        self.assertFalse(contact_exchange_allowed(conv))
 
         confirm_balance(order)
-        self.assertTrue(get_allow_contact(conv))
+        self.assertTrue(contact_exchange_allowed(conv))
 
 
 # ---------------------------------------------------------------------------
