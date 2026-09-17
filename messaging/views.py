@@ -29,7 +29,7 @@ def _broadcast_message(message, conversation):
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
         from django.contrib.auth import get_user_model
-        from .utils import get_allow_contact
+        from .utils import contact_exchange_allowed
 
         channel_layer = get_channel_layer()
         recipient_id = (
@@ -51,7 +51,7 @@ def _broadcast_message(message, conversation):
         except User.DoesNotExist:
             is_admin = False
 
-        if is_admin or get_allow_contact(conversation):
+        if is_admin or contact_exchange_allowed(conversation):
             ws_content = message.content
         else:
             ws_content, _ = mask_contact_info(message.content)
@@ -110,7 +110,7 @@ class ConversationViewSet(
     # Deliberately NOT gated on a reservation: a buyer may message an importer
     # about any listing at any time. What is gated is *contact exchange* —
     # phone/email stay masked until the order's balance payment is confirmed
-    # (see get_allow_contact / mask_contact_info below).
+    # (see contact_exchange_allowed / mask_contact_info below).
 
     def create(self, request, *args, **kwargs):
         serializer = StartConversationSerializer(data=request.data, context={'request': request})
@@ -233,9 +233,9 @@ class ConversationViewSet(
 
         # Cross-message aggregation: detect phone numbers split across
         # consecutive messages from the same sender
-        from .utils import get_allow_contact, mask_conversation_messages
+        from .utils import contact_exchange_allowed, mask_conversation_messages
         is_admin = request.user.is_staff
-        allow = is_admin or get_allow_contact(conv)
+        allow = is_admin or contact_exchange_allowed(conv)
         if not allow and len(msgs) >= 2:
             masked_contents = mask_conversation_messages(
                 msgs, reader_id=request.user.pk,
@@ -245,23 +245,6 @@ class ConversationViewSet(
                 data[i]['content'] = masked
 
         return Response(data)
-
-    @staticmethod
-    def _contact_exchange_allowed(conv) -> bool:
-        """Phone numbers / contact info may only be exchanged after the full
-        balance payment is confirmed on the order between these two parties
-        for this car. Until then messages are stored MASKED."""
-        try:
-            from payments.models import PaymentTransaction
-            return PaymentTransaction.objects.filter(
-                order__car=conv.listing,
-                order__buyer=conv.buyer,
-                order__importer=conv.seller,
-                payment_type='balance',
-                status='succeeded',
-            ).exists()
-        except Exception:
-            return False
 
     def _send_message(self, request, conv):
         if not conv.is_active:
@@ -283,7 +266,8 @@ class ConversationViewSet(
         # Store the MASKED text unless full payment already happened between
         # these parties for this car — this is what actually prevents phone
         # numbers from being exchanged before WARED receives the payment.
-        if self._contact_exchange_allowed(conv):
+        from .utils import contact_exchange_allowed
+        if contact_exchange_allowed(conv):
             stored_content = content
         else:
             # Second pass: catch phone numbers split across messages
