@@ -229,44 +229,15 @@ class ImportOrder(models.Model):
 
     def release_car(self):
         """
-        This order was cancelled/refunded: put the car back on the market,
-        unless another live deal still holds it.
-
-        Clears the reservation lock (is_reserved, current_reservation) — the
-        reservation that became this order kept it — and restores the
-        pre-reservation import_status when one was recorded, else 'available'.
-        An auto-Sold car (full payment confirmed) reverts to 'approved'.
+        This order was cancelled/refunded: put the car back on the market.
+        orders.locks.release_listing() leaves it alone if another live deal or
+        a newer paid reservation still holds it.
         """
-        from cars.models import Listing
-        from cars.visibility import ACTIVE_ORDER_STATUSES, PAID_RESERVATION_STATUSES
+        from orders.locks import release_listing
 
         if not self.car_id:
             return
-        with transaction.atomic():
-            car = Listing.objects.select_for_update().get(pk=self.car_id)
-            still_in_deal = ImportOrder.objects.filter(
-                car_id=car.pk, status__in=ACTIVE_ORDER_STATUSES,
-            ).exclude(pk=self.pk).exists()
-            if still_in_deal:
-                return
-
-            lock = car.current_reservation
-            if lock is not None and lock.status in PAID_RESERVATION_STATUSES:
-                # A fresh paid reservation holds the car; not ours to release.
-                return
-
-            source = (
-                self.source_reservation.exclude(car_import_status_before='')
-                .order_by('-created_at').first()
-            )
-            car.is_reserved = False
-            car.current_reservation = None
-            car.import_status = (source.car_import_status_before if source else '') or 'available'
-            update_fields = ['is_reserved', 'current_reservation', 'import_status']
-            if car.status == 'sold':
-                car.status = 'approved'
-                update_fields.append('status')
-            car.save(update_fields=update_fields)
+        release_listing(self.car, order=self)
 
 
 # ---------------------------------------------------------------------------
@@ -508,41 +479,16 @@ class Reservation(models.Model):
         return car
 
     def _lock_car(self):
-        """
-        Take the car off the market for this reservation.
+        """Take the car off the market — see orders.locks.lock_listing."""
+        from orders.locks import lock_listing
 
-        cars.visibility.public_market_q() hides the car on is_reserved, on
-        import_status='reserved' AND on the paid reservation row itself; all
-        three are set together so nothing reading any one of them disagrees.
-        """
-        car = self.car
-        self.car_import_status_before = car.import_status or ''
-        self.save(update_fields=['car_import_status_before', 'updated_at'])
-
-        car.is_reserved = True
-        car.current_reservation = self
-        car.import_status = 'reserved'
-        car.save(update_fields=['is_reserved', 'current_reservation', 'import_status'])
+        lock_listing(self)
 
     def _release_car(self):
-        """
-        Put the car back on the market exactly as it was before the lock.
+        """Put the car back on the market — see orders.locks.release_listing."""
+        from orders.locks import release_listing
 
-        Restores the remembered pre-reservation import_status rather than
-        assuming 'available' — a car reserved out of 'ready_for_delivery'
-        belongs back in 'ready_for_delivery'.
-        """
-        car = self.car
-        if car.current_reservation_id not in (None, self.pk):
-            # A newer reservation owns the lock; leave it alone.
-            return
-
-        car.is_reserved = False
-        car.current_reservation = None
-        # Only restore if we are the ones who set it to 'reserved'.
-        if car.import_status == 'reserved':
-            car.import_status = self.car_import_status_before or 'available'
-        car.save(update_fields=['is_reserved', 'current_reservation', 'import_status'])
+        release_listing(self.car, reservation=self)
 
     def activate(self):
         """
