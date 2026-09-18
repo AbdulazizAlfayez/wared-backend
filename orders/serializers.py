@@ -432,9 +432,9 @@ class CreateOrderSerializer(serializers.Serializer):
             delivery_method=validated_data.get('delivery_method', 'pickup'),
             delivery_address=validated_data.get('delivery_address', ''),
         )
-        # Reserve the car
-        car.import_status = 'reserved'
-        car.save(update_fields=['import_status'])
+        # Reserve the car (one writer for the lock — see orders.locks)
+        from .locks import lock_listing_for_order
+        lock_listing_for_order(order)
         # First timeline event
         ImportTimeline.objects.create(
             order=order,

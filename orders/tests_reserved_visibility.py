@@ -618,3 +618,102 @@ class BackfillMigrationTests(TestCase):
         car.refresh_from_db()
         self.assertFalse(car.is_reserved)
         self.assertIsNone(car.current_reservation_id)
+
+
+# ---------------------------------------------------------------------------
+# repair_reservation_flags + one writer for the lock
+# ---------------------------------------------------------------------------
+
+class RepairCommandTests(APITestCase):
+    def setUp(self):
+        self.importer = make_importer()
+        self.buyer = make_buyer()
+
+    def _repair(self, **kwargs):
+        from orders.management.commands.repair_reservation_flags import repair
+        return repair(**kwargs)
+
+    def test_locks_a_paid_reservation_whose_car_was_left_open(self):
+        car = make_listing(self.importer, import_status='ready_for_delivery')
+        res = make_reservation(car, self.buyer, self.importer, 'pending_review')
+        locked, released = self._repair()
+        self.assertEqual((locked, released), ([car.pk], []))
+        car.refresh_from_db()
+        res.refresh_from_db()
+        self.assertTrue(car.is_reserved)
+        self.assertEqual(car.current_reservation_id, res.pk)
+        self.assertEqual(car.import_status, 'reserved')
+        self.assertEqual(res.car_import_status_before, 'ready_for_delivery')
+
+    def test_releases_a_car_whose_reservation_ended(self):
+        car = make_listing(self.importer)
+        res = make_reservation(car, self.buyer, self.importer)
+        res.activate()
+        Reservation.objects.filter(pk=res.pk).update(status='cancelled_by_buyer')
+        locked, released = self._repair()
+        self.assertEqual((locked, released), ([], [car.pk]))
+        car.refresh_from_db()
+        self.assertFalse(car.is_reserved)
+        self.assertIsNone(car.current_reservation_id)
+        self.assertEqual(car.import_status, 'available')
+        self.assertIn(car.pk, _ids(self.as_client_get()))
+
+    def as_client_get(self):
+        self.client.force_authenticate(user=make_buyer(email='onlooker@test.com', name='O'))
+        return self.client.get('/api/listings/')
+
+    def test_converted_reservation_with_a_live_order_keeps_its_import_status(self):
+        car = make_listing(self.importer, import_status='shipping')
+        order = ImportOrder.objects.create(car=car, buyer=self.buyer, importer=self.importer,
+                                           total_price=1, status='shipped')
+        res = make_reservation(car, self.buyer, self.importer, 'converted_to_order',
+                               converted_order=order)
+        self._repair()
+        car.refresh_from_db()
+        self.assertTrue(car.is_reserved)
+        self.assertEqual(car.current_reservation_id, res.pk)
+        self.assertEqual(car.import_status, 'shipping')
+
+    def test_is_a_no_op_on_consistent_data(self):
+        car = make_listing(self.importer)
+        res = make_reservation(car, self.buyer, self.importer)
+        res.activate()
+        make_listing(self.importer, title='Untouched')
+        self.assertEqual(self._repair(), ([], []))
+
+    def test_dry_run_writes_nothing(self):
+        car = make_listing(self.importer)
+        make_reservation(car, self.buyer, self.importer, 'pending_review')
+        locked, _ = self._repair(dry_run=True)
+        self.assertEqual(locked, [car.pk])
+        car.refresh_from_db()
+        self.assertFalse(car.is_reserved)
+
+    def test_release_refuses_while_another_live_deal_holds_the_car(self):
+        from orders.locks import release_listing
+        car = make_listing(self.importer)
+        res = make_reservation(car, self.buyer, self.importer)
+        res.activate()
+        ImportOrder.objects.create(car=car, buyer=self.buyer, importer=self.importer,
+                                   total_price=1, status='confirmed')
+        release_listing(car)
+        car.refresh_from_db()
+        self.assertTrue(car.is_reserved)
+
+    def test_order_placed_without_a_reservation_locks_and_releases(self):
+        car = make_listing(self.importer)
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/', {'car_id': car.pk}, format='json')
+        self.assertIn(resp.status_code, (200, 201), resp.data)
+        car.refresh_from_db()
+        self.assertEqual(car.import_status, 'reserved')
+        stranger = make_buyer(email='nosy@test.com', name='Nosy')
+        self.client.force_authenticate(user=stranger)
+        self.assertNotIn(car.pk, _ids(self.client.get('/api/listings/')))
+        order_id = resp.data['id'] if 'id' in resp.data else resp.data['order']['id']
+        self.client.force_authenticate(user=self.buyer)
+        self.assertEqual(self.client.post(f'/api/orders/{order_id}/cancel/').status_code, 200)
+        car.refresh_from_db()
+        self.assertEqual(car.import_status, 'available')
+        self.client.force_authenticate(user=stranger)
+        self.assertIn(car.pk, _ids(self.client.get('/api/listings/')))
