@@ -186,6 +186,21 @@ class ImportOrder(models.Model):
             return []
         return list(self.VALID_TRANSITIONS.get(self.status, []))
 
+    def unlocked_next_statuses(self):
+        """
+        `allowed_next_statuses()` minus the ones the payment gate would reject
+        with a 409 right now.
+
+        Transitions from 'purchased' onward need the buyer's balance confirmed
+        (PAYMENT_GATED_STATUSES). The raw list is what
+        validate_status_transition enforces; this is what a client should
+        offer, so the importer is never shown a button that cannot work yet.
+        """
+        allowed = self.allowed_next_statuses()
+        if self.balance_payment_confirmed():
+            return allowed
+        return [s for s in allowed if s not in self.PAYMENT_GATED_STATUSES]
+
     def validate_status_transition(self, new_status):
         """
         Enforce VALID_TRANSITIONS. Rules:

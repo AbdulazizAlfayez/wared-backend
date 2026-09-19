@@ -146,8 +146,12 @@ class ImportOrderListSerializer(serializers.ModelSerializer):
         ]
 
     def get_allowed_next_statuses(self, obj):
-        """Lets the importer UI offer only transitions that will succeed."""
-        return obj.allowed_next_statuses()
+        """
+        Only transitions that will succeed right now: the payment-gated ones
+        are left out until the balance is confirmed, so the importer app never
+        offers a move that would come back 409.
+        """
+        return obj.unlocked_next_statuses()
 
     def get_status_display(self, obj):
         return obj.get_status_display()
@@ -528,16 +532,36 @@ class UploadDocumentSerializer(serializers.Serializer):
 # Reservation serializers (Phase M3)
 # ---------------------------------------------------------------------------
 
+def person_brief(user):
+    """
+    The little the other party needs to render a row: an id, a first name and
+    initials for the avatar disc. Full names, emails and phones are contact
+    details, and those stay masked until the balance is paid.
+    """
+    if user is None:
+        return None
+    parts = [part for part in (user.name or '').split() if part]
+    first = parts[0] if parts else (user.email or '').split('@')[0]
+    initials = ''.join(part[0] for part in parts[:2]).upper() or first[:1].upper()
+    return {'id': user.id, 'first_name': first, 'initials': initials}
+
+
 class ReservationCarSerializer(serializers.ModelSerializer):
     primary_image = serializers.SerializerMethodField()
+    # Same URL as `primary_image`, under the name the mobile client uses for
+    # every other car thumbnail. Both are kept: renaming would break the web.
+    primary_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
         fields = [
             'id', 'title', 'make', 'model', 'year', 'price',
-            'final_price_sar', 'primary_image', 'import_status',
-            'source_country', 'is_reserved',
+            'final_price_sar', 'primary_image', 'primary_image_url',
+            'import_status', 'source_country', 'is_reserved',
         ]
+
+    def get_primary_image_url(self, obj):
+        return self.get_primary_image(obj)
 
     def get_primary_image(self, obj):
         img = obj.images.filter(is_primary=True).first() or obj.images.first()
@@ -557,8 +581,12 @@ class ReservationListSerializer(serializers.ModelSerializer):
     car                = ReservationCarSerializer(read_only=True)
     status_display     = serializers.CharField(source='get_status_display', read_only=True)
     importer_name      = serializers.SerializerMethodField()
+    buyer              = serializers.SerializerMethodField()
     expires_at         = serializers.DateTimeField(read_only=True)
     hours_remaining    = serializers.SerializerMethodField()
+    # Same number under the name /reservations/pending-for-me/ has always
+    # used, so one client model reads both endpoints.
+    time_remaining_hours = serializers.SerializerMethodField()
     can_cancel         = serializers.SerializerMethodField()
     can_pay            = serializers.SerializerMethodField()
     # The SAR 99 fee is a non-refundable platform service fee and WARED's
@@ -571,8 +599,10 @@ class ReservationListSerializer(serializers.ModelSerializer):
             'id', 'reservation_number', 'car', 'status', 'status_display',
             'platform_fee_sar', 'fee_refundable',
             'payment_method', 'payment_status',
-            'paid_at', 'cancelled_at', 'importer_name',
-            'expires_at', 'hours_remaining', 'can_cancel', 'can_pay',
+            'paid_at', 'cancelled_at', 'importer_id', 'importer_name',
+            'buyer', 'buyer_notes',
+            'expires_at', 'hours_remaining', 'time_remaining_hours',
+            'can_cancel', 'can_pay',
             'created_at', 'updated_at',
         ]
 
@@ -590,6 +620,12 @@ class ReservationListSerializer(serializers.ModelSerializer):
         if obj.status not in OPEN_RESERVATION_STATUSES:
             return 0.0
         return obj.hours_remaining
+
+    def get_time_remaining_hours(self, obj):
+        return self.get_hours_remaining(obj)
+
+    def get_buyer(self, obj):
+        return person_brief(obj.buyer)
 
     def get_can_cancel(self, obj):
         user = self._request_user()
@@ -624,7 +660,7 @@ class ReservationDetailSerializer(ReservationListSerializer):
 
     class Meta(ReservationListSerializer.Meta):
         fields = ReservationListSerializer.Meta.fields + [
-            'payment_reference', 'buyer_notes', 'cancellation_reason',
+            'payment_reference', 'cancellation_reason',
             'importer_contact', 'buyer_info', 'converted_order',
         ]
 

@@ -1343,6 +1343,12 @@ class MyVerificationStatusView(generics.RetrieveAPIView):
     def get(self, request, *args, **kwargs):
         user = request.user
         pending = VerificationRequest.objects.filter(user=user, status='pending')
+        # Not refusals: the reviewer wants a better document. Each carries an
+        # admin_note saying what to fix, and the app shows them as an action
+        # for the user rather than a dead end.
+        changes_requested = VerificationRequest.objects.filter(
+            user=user, status='changes_requested',
+        )
         return Response({
             'email_verified': getattr(user, 'is_email_verified', False),
             'phone_verified': getattr(user, 'is_phone_verified', False),
@@ -1353,6 +1359,7 @@ class MyVerificationStatusView(generics.RetrieveAPIView):
             'is_business_verified': user.is_business_verified,
             'verification_level': user.verification_level,
             'pending_requests': VerificationRequestSerializer(pending, many=True).data,
+            'changes_requested': VerificationRequestSerializer(changes_requested, many=True).data,
         })
 
 
@@ -1403,13 +1410,43 @@ class AdminVerificationActionView(generics.UpdateAPIView):
 
         req = self.get_object()
         action = request.data.get('action')
-        if action not in ('approve', 'reject'):
-            return Response({'detail': 'action must be "approve" or "reject".'}, status=400)
-        if req.status != 'pending':
+        if action not in ('approve', 'reject', 'request_changes'):
+            return Response(
+                {'detail': 'action must be "approve", "reject" or "request_changes".'},
+                status=400,
+            )
+        # A request already sent back for changes can still be approved,
+        # rejected, or sent back again after the user replaces the document.
+        if req.status not in ('pending', 'changes_requested'):
             return Response({'detail': 'Only pending requests can be actioned.'}, status=400)
 
         req.reviewed_by = request.user
         req.reviewed_at = _tz.now()
+
+        if action == 'request_changes':
+            note = (request.data.get('admin_note') or request.data.get('note') or '').strip()
+            if not note:
+                return Response(
+                    {'detail': 'admin_note is required when requesting changes.'},
+                    status=400,
+                )
+            req.admin_note = note
+            req.status = 'changes_requested'
+            req.save()
+            notify(
+                req.user,
+                'verification_rejected',
+                title='Verification — action needed',
+                message=f'Your {req.verification_type} verification needs a change: {note}',
+            )
+            log_action(
+                user=request.user,
+                action='update',
+                model_name='VerificationRequest',
+                object_id=req.pk,
+                ip_address=get_client_ip(request),
+            )
+            return Response(AdminVerificationSerializer(req, context={'request': request}).data)
 
         if action == 'approve':
             req.status = 'approved'

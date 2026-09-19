@@ -158,6 +158,10 @@ class VerificationRequest(models.Model):
         ('pending', 'Pending Review'),
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
+        # Not a refusal: the document is unreadable, expired or the wrong one,
+        # and the user is expected to send a better copy. `admin_note` says
+        # what to fix; the request stays actionable.
+        ('changes_requested', 'Changes Requested'),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='verification_requests')
     verification_type = models.CharField(max_length=30, choices=VERIFICATION_TYPES)
@@ -165,6 +169,8 @@ class VerificationRequest(models.Model):
     document_file = models.FileField(upload_to='verification/requests/', null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     rejection_reason = models.TextField(blank=True, default='')
+    #: What the reviewer wants changed, shown to the user as-is.
+    admin_note = models.TextField(blank=True, default='')
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True, blank=True,

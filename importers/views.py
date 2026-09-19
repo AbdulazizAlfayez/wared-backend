@@ -21,7 +21,9 @@ class ImporterProfileListView(ListAPIView):
     serializer_class   = ImporterProfileListSerializer
 
     def get_queryset(self):
-        qs = ImporterProfile.objects.filter(is_verified=True).select_related('city')
+        qs = ImporterProfile.objects.filter(
+            user__is_business_verified=True,
+        ).select_related('city', 'user')
         p  = self.request.query_params
         if q := p.get('search'):
             qs = qs.filter(business_name__icontains=q)
@@ -372,4 +374,79 @@ class AdminCRDashboardView(APIView):
             'importers_expired_suspended': qs.filter(cr_verification_status='suspended').count(),
             'importers_pending_renewal_review': qs.filter(cr_verification_status='renewal_under_review').count(),
             'recent_actions': [{'business_name': h.importer_profile.business_name, 'action': h.get_action_display(), 'notes': h.notes, 'created_at': h.created_at.isoformat()} for h in history],
+        })
+
+
+class MyPayoutsView(APIView):
+    """
+    GET /api/importers/me/payouts/ — what WARED owes, or has settled with,
+    this importer.
+
+    One row per confirmed balance payment: the buyer paid the full car price
+    to WARED, WARED keeps PLATFORM_COMMISSION_PCT and the rest is the
+    importer's. Read-only — nothing here moves money, it reports payments that
+    already succeeded.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from decimal import Decimal, ROUND_HALF_UP
+
+        from django.conf import settings as dj_settings
+
+        from payments.models import PaymentTransaction
+
+        user = request.user
+        if getattr(user, 'role', '') not in ('importer', 'admin') and not user.is_staff:
+            return Response({'detail': 'Importer access only.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        pct = Decimal(str(getattr(dj_settings, 'PLATFORM_COMMISSION_PCT', 1.0)))
+        cents = Decimal('0.01')
+
+        txns = (
+            PaymentTransaction.objects
+            .filter(
+                order__importer=user,
+                payment_type='balance',
+                status='succeeded',
+            )
+            .select_related('order', 'order__car', 'order__buyer')
+            .order_by('-updated_at')
+        )
+
+        results = []
+        gross_total = commission_total = net_total = Decimal('0.00')
+        for txn in txns:
+            order = txn.order
+            gross = (txn.amount or Decimal('0.00')).quantize(cents, rounding=ROUND_HALF_UP)
+            commission = (gross * pct / Decimal('100')).quantize(cents, rounding=ROUND_HALF_UP)
+            net = gross - commission
+
+            buyer_name = (order.buyer.name or '').split()
+            results.append({
+                'order_id': order.pk,
+                'order_number': order.order_number,
+                'car_title': order.car.title if order.car else '',
+                'buyer_first_name': buyer_name[0] if buyer_name else '',
+                'gross_sar': float(gross),
+                'commission_pct': float(pct),
+                'commission_sar': float(commission),
+                'net_sar': float(net),
+                # When WARED marked the transfer confirmed — the row's last
+                # write, which for a succeeded balance payment is that moment.
+                'confirmed_at': txn.updated_at.isoformat() if txn.updated_at else None,
+            })
+            gross_total += gross
+            commission_total += commission
+            net_total += net
+
+        return Response({
+            'count': len(results),
+            'results': results,
+            'totals': {
+                'gross': float(gross_total),
+                'commission': float(commission_total),
+                'net': float(net_total),
+            },
         })
