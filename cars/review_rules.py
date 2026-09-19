@@ -19,7 +19,7 @@ REVIEW_TRIGGERING_FIELDS = frozenset({
     'vin',
     # Money: what the buyer would pay, and every input that derives it.
     'price',
-    'margin_sar',
+    'final_price_sar',
     'source_price',
     'source_currency',
     'shipping_cost',
