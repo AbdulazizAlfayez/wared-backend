@@ -18,6 +18,9 @@ _CONTACT_FIELDS = {
 
 
 class ImporterProfileListSerializer(serializers.ModelSerializer):
+    # A property now (see ImporterProfile.is_verified), so it needs declaring:
+    # ModelSerializer only introspects concrete fields.
+    is_verified = serializers.BooleanField(read_only=True)
     city    = CityBriefSerializer(read_only=True)
     user_id = serializers.IntegerField(source='user.id', read_only=True)
 
@@ -34,6 +37,7 @@ class ImporterProfileListSerializer(serializers.ModelSerializer):
 
 class _ImporterDetailBase(serializers.ModelSerializer):
     """Shared computed fields for both public and owner/admin detail."""
+    is_verified            = serializers.BooleanField(read_only=True)
     city                   = CityBriefSerializer(read_only=True)
     user_id                = serializers.IntegerField(source='user.id', read_only=True)
     active_listings_count  = serializers.SerializerMethodField()
@@ -74,7 +78,7 @@ class ImporterProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model   = ImporterProfile
         exclude = [
-            'user', 'is_verified', 'verified_at',
+            'user', 'verified_at',
             'average_rating', 'total_reviews', 'total_cars_imported',
             'created_at', 'updated_at',
         ]

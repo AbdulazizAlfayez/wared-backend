@@ -50,8 +50,10 @@ class TestPublicBrowseOnlyShowsVerified(TestCase):
         self.importer1 = make_importer_user('verified@test.com', 'Verified Co')
         self.importer2 = make_importer_user('unverified@test.com', 'Unverified Co')
 
-        ImporterProfile.objects.filter(user=self.importer1).update(is_verified=True)
-        ImporterProfile.objects.filter(user=self.importer2).update(is_verified=False)
+        # Verification is one flag now, on the user (ImporterProfile.is_verified
+        # is a property of it).
+        self.importer1.is_business_verified = True
+        self.importer1.save(update_fields=['is_business_verified'])
 
     def test_public_browse_only_shows_verified(self):
         response = self.client.get('/api/importers/')
@@ -93,7 +95,8 @@ class TestBuyerCannotReviewWithoutCompletedOrder(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.importer = make_importer_user('rev_importer@test.com', 'Rev Importer')
-        ImporterProfile.objects.filter(user=self.importer).update(is_verified=True)
+        self.importer.is_business_verified = True
+        self.importer.save(update_fields=['is_business_verified'])
         self.profile = ImporterProfile.objects.get(user=self.importer)
 
         self.buyer = make_user('buyer_rev@test.com', role='user', name='Buyer')

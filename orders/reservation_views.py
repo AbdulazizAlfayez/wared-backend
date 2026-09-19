@@ -275,6 +275,13 @@ class ReservationListView(APIView):
     """
     GET /api/reservations/
     Buyers see their own; importers see reservations on their cars.
+
+    ?role=importer — only the ones on this user's cars (their whole history:
+    accepted, rejected, expired). ?role=buyer — only the ones they placed.
+    An importer who also buys sees both sides without the filter, which is why
+    it exists: the two lists are different screens in the app.
+
+    ?status=<status> narrows further; `all` is accepted and means no filter.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -283,13 +290,23 @@ class ReservationListView(APIView):
         user = request.user
         role = getattr(user, 'role', '')
 
-        if user.is_staff or role == 'admin':
-            qs = Reservation.objects.select_related('car', 'buyer', 'importer').all()
-        else:
-            # Show reservations where user is buyer OR importer
-            # (an importer can also be a buyer on another importer's car)
-            qs = Reservation.objects.select_related('car', 'buyer', 'importer').filter(
-                Q(buyer=user) | Q(importer=user)
+        qs = Reservation.objects.select_related(
+            'car', 'buyer', 'importer',
+        ).prefetch_related('car__images')
+        if not (user.is_staff or role == 'admin'):
+            # Reservations where the user is buyer OR importer (an importer
+            # can also be a buyer on another importer's car).
+            qs = qs.filter(Q(buyer=user) | Q(importer=user))
+
+        role_filter = request.query_params.get('role')
+        if role_filter == 'importer':
+            qs = qs.filter(importer=user)
+        elif role_filter == 'buyer':
+            qs = qs.filter(buyer=user)
+        elif role_filter:
+            return Response(
+                {'detail': 'role must be "importer" or "buyer".'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Filter by status
@@ -395,8 +412,29 @@ class ReservationCancelView(APIView):
 # the clients use.)
 # ---------------------------------------------------------------------------
 
+#: 403 body for an importer who has not passed business verification.
+IMPORTER_NOT_VERIFIED = {
+    'code': 'importer_not_verified',
+    'detail': 'Your business is not verified yet. WARED must verify your '
+              'commercial registration before you can accept a reservation.',
+    'detail_ar': 'لم يتم توثيق نشاطك التجاري بعد. يجب على وارد توثيق سجلك '
+                 'التجاري قبل أن تتمكن من قبول الحجز.',
+}
+
+
+def _business_verified(user):
+    """One source of truth — see ImporterProfile.is_verified."""
+    return bool(getattr(user, 'is_business_verified', False))
+
+
 class ReservationAcceptView(APIView):
-    """Importer accepts a pending_review reservation → creates ImportOrder."""
+    """
+    Importer accepts a pending_review reservation → creates ImportOrder.
+
+    Accepting starts a deal that ends in the buyer wiring the full price, so
+    it is gated on business verification. Rejecting is not: an unverified
+    importer must always be able to let a buyer go.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
@@ -405,8 +443,13 @@ class ReservationAcceptView(APIView):
         except Reservation.DoesNotExist:
             return Response({'detail': 'Reservation not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        if res.importer_id != request.user.id and not (request.user.is_staff or getattr(request.user, 'role', '') == 'admin'):
+        is_admin = request.user.is_staff or getattr(request.user, 'role', '') == 'admin'
+        if res.importer_id != request.user.id and not is_admin:
             return Response({'detail': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Staff acting on an importer's behalf are not blocked by the gate.
+        if not is_admin and not _business_verified(request.user):
+            return Response(IMPORTER_NOT_VERIFIED, status=status.HTTP_403_FORBIDDEN)
 
         if res.status != 'pending_review':
             return Response(
@@ -520,16 +563,21 @@ class ReservationPendingForMeView(APIView):
 
         qs = Reservation.objects.filter(
             importer=user, status='pending_review',
-        ).select_related('car', 'buyer').order_by('created_at')
+        ).select_related('car', 'buyer').prefetch_related('car__images').order_by('created_at')
+
+        from .serializers import ReservationCarSerializer, person_brief
 
         now = timezone.now()
         results = []
         for res in qs:
             expiry_date = res.created_at + timezone.timedelta(days=Reservation.RESERVATION_EXPIRY_DAYS)
-            remaining_hours = max(0, (expiry_date - now).total_seconds() / 3600)
+            remaining_hours = round(max(0, (expiry_date - now).total_seconds() / 3600), 1)
+            brief = person_brief(res.buyer)
+            car = ReservationCarSerializer(res.car, context={'request': request}).data
             results.append({
                 'id': res.id,
                 'reservation_number': res.reservation_number,
+                'importer_id': res.importer_id,
                 'car': {
                     'id': res.car.id,
                     'title': res.car.title,
@@ -537,18 +585,24 @@ class ReservationPendingForMeView(APIView):
                     'model': res.car.model,
                     'year': res.car.year,
                     'final_price_sar': str(res.car.final_price_sar or res.car.price or 0),
+                    'primary_image_url': car.get('primary_image_url'),
                 },
                 'buyer': {
                     'id': res.buyer.id,
                     'name': res.buyer.name,
+                    'first_name': brief['first_name'],
+                    'initials': brief['initials'],
                     # phone intentionally omitted — contact exchange is only
                     # allowed after full payment (use in-app chat until then)
                     'member_since': res.buyer.date_joined.isoformat(),
                 },
+                'buyer_notes': res.buyer_notes,
                 'platform_fee_sar': str(res.platform_fee_sar),
                 'paid_at': res.paid_at.isoformat() if res.paid_at else None,
                 'created_at': res.created_at.isoformat(),
-                'time_remaining_hours': round(remaining_hours, 1),
+                'time_remaining_hours': remaining_hours,
+                # Same number, the name the list endpoint uses.
+                'hours_remaining': remaining_hours,
             })
 
         return Response({'count': len(results), 'results': results})

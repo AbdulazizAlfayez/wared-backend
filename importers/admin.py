@@ -12,10 +12,12 @@ class CRVerificationHistoryInline(admin.TabularInline):
 @admin.register(ImporterProfile)
 class ImporterProfileAdmin(admin.ModelAdmin):
     list_display = ('business_name', 'user', 'is_verified', 'cr_verification_status', 'cr_expiry_date', 'source_countries', 'average_rating', 'total_cars_imported', 'created_at')
-    list_filter = ('is_verified', 'cr_verification_status', 'city')
+    list_filter = ('user__is_business_verified', 'cr_verification_status', 'city')
     search_fields = ('business_name', 'user__email')
     readonly_fields = ('created_at', 'updated_at', 'average_rating', 'total_reviews', 'cr_suspended_at', 'cr_reactivated_at')
-    list_editable = ('is_verified',)
+    # `is_verified` reads user.is_business_verified and is not editable here;
+    # verify a business through the verification requests screen.
+    readonly_fields = ('is_verified',)
     inlines = [CRVerificationHistoryInline]
 
 

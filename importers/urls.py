@@ -8,6 +8,8 @@ from .views import (
 urlpatterns = [
     path('importers/',                    views.ImporterProfileListView.as_view(),   name='importer-list'),
     path('importers/me/',                 views.MyImporterProfileView.as_view(),     name='importer-me'),
+    # Before the <int:pk> route below, or 'me' is matched as a profile id.
+    path('importers/me/payouts/',         views.MyPayoutsView.as_view(),             name='importer-payouts'),
     path('importers/<int:pk>/',           views.ImporterProfileDetailView.as_view(), name='importer-detail'),
     path('importers/<int:pk>/inventory/', views.ImporterInventoryView.as_view(),     name='importer-inventory'),
     path('importers/<int:pk>/reviews/',   views.ImporterReviewsView.as_view(),       name='importer-reviews'),

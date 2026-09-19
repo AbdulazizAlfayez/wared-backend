@@ -208,13 +208,20 @@ class Command(BaseCommand):
                 user.set_password("ImporterTest2026")
                 user.save(update_fields=["password"])
 
+            # Verification lives on the user now (ImporterProfile.is_verified
+            # is a read-only property of user.is_business_verified).
+            profile_defaults = dict(imp_def["profile"])
+            if profile_defaults.pop("is_verified", False) and not user.is_business_verified:
+                user.is_business_verified = True
+                user.save(update_fields=["is_business_verified"])
+
             profile, _ = ImporterProfile.objects.get_or_create(
                 user=user,
-                defaults=imp_def["profile"],
+                defaults=profile_defaults,
             )
             if not _:
                 # Update existing profile fields
-                for k, v in imp_def["profile"].items():
+                for k, v in profile_defaults.items():
                     setattr(profile, k, v)
                 profile.save()
 
@@ -366,7 +373,9 @@ class Command(BaseCommand):
         # ── Summary ───────────────────────────────────────────────────────
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS("=== Seed Summary ==="))
-        self.stdout.write(f"  Importers:  {ImporterProfile.objects.filter(is_verified=True).count()}")
+        self.stdout.write(
+            f"  Importers:  {ImporterProfile.objects.filter(user__is_business_verified=True).count()}"
+        )
         for st in ["available", "shipping", "reserved", "at_port", "ready_for_delivery"]:
             c = Listing.objects.filter(import_status=st, is_active=True).count()
             self.stdout.write(f"  Cars [{st}]: {c}")

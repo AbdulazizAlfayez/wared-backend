@@ -389,8 +389,11 @@ class SubmitVerificationSerializer(serializers.ModelSerializer):
 class VerificationRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = VerificationRequest
-        fields = ['id', 'verification_type', 'document_number', 'status', 'rejection_reason', 'created_at', 'reviewed_at']
-        read_only_fields = ['id', 'verification_type', 'document_number', 'status', 'rejection_reason', 'created_at', 'reviewed_at']
+        fields = [
+            'id', 'verification_type', 'document_number', 'status',
+            'rejection_reason', 'admin_note', 'created_at', 'reviewed_at',
+        ]
+        read_only_fields = fields
 
 
 class AdminVerificationSerializer(serializers.ModelSerializer):
@@ -404,8 +407,8 @@ class AdminVerificationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'user_email', 'user_name', 'verification_type',
             'document_number', 'document_file', 'document_file_url', 'status',
-            'rejection_reason', 'reviewed_by', 'reviewed_by_email', 'reviewed_at',
-            'created_at', 'notes',
+            'rejection_reason', 'admin_note', 'reviewed_by', 'reviewed_by_email',
+            'reviewed_at', 'created_at', 'notes',
         ]
 
     def get_document_file_url(self, obj):

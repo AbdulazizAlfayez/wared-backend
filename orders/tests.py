@@ -18,6 +18,10 @@ def make_importer(**kwargs):
         'name': 'Test Importer',
         'role': 'importer',
         'password': 'testpass123',
+        # Accepting a reservation is gated on business verification, so the
+        # default fixture is a verified importer. Pass
+        # is_business_verified=False to test the gate itself.
+        'is_business_verified': True,
     }
     defaults.update(kwargs)
     return User.objects.create_user(**defaults)

@@ -32,7 +32,6 @@ class ImporterProfile(models.Model):
     city                    = models.ForeignKey('locations.City', null=True, blank=True, on_delete=models.SET_NULL)
     latitude                = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude               = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    is_verified             = models.BooleanField(default=False)
     verified_at             = models.DateTimeField(null=True, blank=True)
     average_rating              = models.DecimalField(max_digits=3, decimal_places=2, default=0)
     total_reviews               = models.PositiveIntegerField(default=0)
@@ -65,6 +64,21 @@ class ImporterProfile(models.Model):
 
     def __str__(self):
         return self.business_name
+
+    @property
+    def is_verified(self):
+        """
+        Business verification, read from the one place that holds it:
+        `user.is_business_verified`.
+
+        This used to be a second boolean on the profile, and the two drifted —
+        the admin could tick one while the verification flow set the other, so
+        the same importer read as verified on one screen and unverified on
+        another. The field is gone (migration 0004); write
+        `user.is_business_verified` instead. In queries, filter on
+        `user__is_business_verified`.
+        """
+        return bool(self.user and self.user.is_business_verified)
 
 
 class CRVerificationHistory(models.Model):
