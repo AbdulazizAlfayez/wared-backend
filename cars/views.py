@@ -1027,6 +1027,14 @@ class ListingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        # A draft may sit priceless; a listing in the queue may not. This is
+        # the same rule the serializer applies to a non-draft payload.
+        if listing.final_price_sar is None and listing.price is None:
+            return Response(
+                {'final_price_sar': 'This field is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         listing.status = 'pending'
         try:
             listing.save(update_fields=['status'])

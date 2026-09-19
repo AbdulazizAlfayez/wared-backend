@@ -136,8 +136,10 @@ class CostBreakdownSerializer(serializers.Serializer):
 
     `calculated_total` used to live here: a property that summed `source_price`
     — a foreign-currency amount — straight into the SAR costs, reporting
-    SAR 75,050,506 for a SAR 254,256 Korean car. It is gone. `total_landed_cost`
-    is the real figure, computed in `cars/pricing.py` at save time.
+    SAR 75,050,506 for a SAR 254,256 Korean car. It is gone.
+    `total_landed_cost` is the real figure, computed in `cars/pricing.py` at
+    save time. It is what the car cost to land, NOT what it sells for:
+    `final_price_sar` is the importer's asking price and is set by them.
     """
 
     source_price        = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
@@ -149,17 +151,18 @@ class CostBreakdownSerializer(serializers.Serializer):
     transportation_cost = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True, allow_null=True)
     total_landed_cost   = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
     final_price_sar     = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
-    margin_sar          = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
-    fx_rate_used        = serializers.DecimalField(max_digits=12, decimal_places=6, read_only=True, allow_null=True)
-    fx_rate_date        = serializers.DateTimeField(read_only=True, allow_null=True)
 
 
 class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSerializer):
     """Serializer for Listing (api/listings). Includes nested images and primary_image URL."""
 
-    # Derived from the import pricing whenever there is any, so it cannot be
-    # unconditionally required — see `validate`.
+    # The asking price. `final_price_sar` is the one the importer fills in on
+    # both clients; `price` mirrors it (see `validate`), and either may be
+    # sent. Neither is required on a draft — see `validate`.
     price = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True,
+    )
+    final_price_sar = serializers.DecimalField(
         max_digits=12, decimal_places=2, required=False, allow_null=True,
     )
     # Filled in `to_representation` for the owner and admins only.
@@ -247,8 +250,8 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'original_listing_url', 'source_price', 'source_currency',
             # Import — Cost Breakdown
             'shipping_cost', 'customs_duty_amount', 'vat_amount', 'inspection_fee',
-            'transportation_cost', 'margin_sar',
-            'total_landed_cost', 'final_price_sar', 'fx_rate_used', 'fx_rate_date',
+            'transportation_cost',
+            'total_landed_cost', 'final_price_sar',
             'cost_breakdown',
             # Import — Status & Reservation
             'import_status', 'is_reserved', 'reservation_state',
@@ -280,10 +283,10 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'promotion_priority', 'is_promoted', 'active_promotion',
             'owner_verified', 'owner_verification_level',
             'cost_breakdown', 'is_favorited_by_me',
-            # Pricing is computed in save() from source_price, the SAR costs and
-            # margin_sar — see cars/pricing.py. `price` follows final_price_sar,
-            # so a client that sends one is ignored rather than obeyed.
-            'total_landed_cost', 'final_price_sar', 'fx_rate_used', 'fx_rate_date',
+            # The importer sets `final_price_sar`; `price` is kept in step with
+            # it in validate(). `total_landed_cost` is informational and
+            # computed in save() — see cars/pricing.py.
+            'total_landed_cost',
             'like_count', 'comment_count', 'is_liked',
             'reservation_state',
         )
@@ -527,55 +530,65 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
     PRICE_MIN = 5000
     PRICE_MAX = 5000000
 
-    def _preview_pricing(self, data):
+    def _is_draft(self, data):
         """
-        The pricing this payload would produce, without saving anything.
+        Whether this payload leaves the listing parked as a draft.
 
-        Runs the same function `save()` will, against the incoming values
-        layered over the instance being edited, so a computed price that lands
-        outside the accepted range is refused with a field error instead of a
-        500 from deep inside `save()`.
+        A draft is a half-filled form the importer saved to come back to, so
+        the price is not demanded yet. Submitting it is what requires one —
+        enforced here on create/update and again in `ListingViewSet.submit`.
         """
-        from types import SimpleNamespace
+        requested = (self.initial_data.get('status') or '').strip().lower() \
+            if hasattr(self, 'initial_data') else ''
+        if requested:
+            return requested == 'draft'
+        return bool(self.instance and self.instance.status == 'draft')
 
-        from .pricing import MissingExchangeRate, compute_pricing
+    def _sent_price(self, data):
+        """
+        The price in this payload, if it carries one.
 
-        fields = (
-            'source_price', 'source_currency', 'shipping_cost', 'customs_duty_amount',
-            'vat_amount', 'inspection_fee', 'transportation_cost', 'margin_sar',
-        )
-        current = {
-            field: (
-                data[field] if field in data
-                else getattr(self.instance, field, None)
-            )
-            for field in fields
-        }
-        try:
-            return compute_pricing(SimpleNamespace(**current)), None
-        except MissingExchangeRate as exc:
-            return None, str(exc)
+        `final_price_sar` is the field both clients fill in; `price` is the
+        older name and still accepted. Whichever arrives wins.
+        """
+        for field in ('final_price_sar', 'price'):
+            if data.get(field) is not None:
+                return data[field]
+        return None
+
+    def _stored_price(self):
+        if not self.instance:
+            return None
+        return self.instance.final_price_sar or self.instance.price
 
     def validate(self, data):
         errors = {}
         current_year = datetime.date.today().year
 
-        computed, rate_error = self._preview_pricing(data)
-        if rate_error:
-            errors['source_currency'] = rate_error
-        elif computed:
-            final = computed['final_price_sar']
-            if final < self.PRICE_MIN or final > self.PRICE_MAX:
-                # The importer controls this through margin_sar and the costs,
-                # so the message says which number to move.
-                errors['margin_sar'] = (
-                    f'The resulting price is SAR {final:,.0f}. '
-                    f'It must be between {self.PRICE_MIN:,} and {self.PRICE_MAX:,} SAR — '
-                    f'adjust the margin or the costs.'
-                )
-        elif not self.instance and data.get('price') is None:
-            # No import pricing to derive from, so a price has to be given.
-            errors['price'] = 'This field is required.'
+        # Price: the importer's number, within the marketplace bounds. The
+        # cost lines are informational and never move it (see cars/pricing.py).
+        sent = self._sent_price(data)
+        if sent is None:
+            # Nothing sent: required on the way in unless this stays a draft,
+            # and untouched on an edit that is about something else. Mirroring
+            # here instead would rewrite final_price_sar on a description edit
+            # and send an approved listing back for review over nothing.
+            if self._stored_price() is None and not self._is_draft(data):
+                errors['final_price_sar'] = 'This field is required.'
+        elif sent < self.PRICE_MIN or sent > self.PRICE_MAX:
+            message = (
+                f'Price must be between SAR {self.PRICE_MIN:,} and '
+                f'SAR {self.PRICE_MAX:,}.'
+            )
+            for field in ('final_price_sar', 'price'):
+                if data.get(field) is not None:
+                    errors[field] = message
+            errors.setdefault('final_price_sar', message)
+        else:
+            # Written together, so the marketplace card and the import screens
+            # can never advertise different numbers.
+            data['final_price_sar'] = sent
+            data['price'] = sent
 
         # Year: 1980 to current_year + 1
         year = data.get('year')
@@ -591,15 +604,14 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             elif mileage > 1000000:
                 errors['mileage'] = 'Mileage cannot exceed 1,000,000 km.'
 
-        # Price: > 0 and <= 5,000,000
-        MAX_PRICE = 5000000
-        for price_field in ('price', 'final_price_sar', 'source_price'):
-            val = data.get(price_field)
-            if val is not None:
-                if val <= 0:
-                    errors[price_field] = 'Price must be greater than zero.'
-                elif val > MAX_PRICE:
-                    errors[price_field] = f'Price cannot exceed SAR {MAX_PRICE:,}.'
+        # The source price is what the car cost abroad, in its own currency —
+        # informational, but a negative or absurd figure is still a typo.
+        source_price = data.get('source_price')
+        if source_price is not None:
+            if source_price <= 0:
+                errors['source_price'] = 'Price must be greater than zero.'
+            elif source_price > self.PRICE_MAX:
+                errors['source_price'] = f'Price cannot exceed SAR {self.PRICE_MAX:,}.'
 
         # Required fields for submission (only on create, not partial update)
         if not self.instance:

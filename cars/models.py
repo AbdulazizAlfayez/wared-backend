@@ -637,7 +637,10 @@ class Listing(models.Model):
     make        = models.CharField(max_length=100)
     model       = models.CharField(max_length=100)
     year        = models.IntegerField()
-    price       = models.DecimalField(max_digits=12, decimal_places=2)
+    # Null only while a listing is a draft: the importer saved a half-filled
+    # form. Submitting requires a price (cars/serializers.py), and an approved
+    # listing therefore always has one.
+    price       = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     mileage     = models.IntegerField()
     city        = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
@@ -801,16 +804,11 @@ class Listing(models.Model):
     vat_amount           = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     inspection_fee       = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     transportation_cost  = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    # What the importer adds on top of the landed cost. The one pricing input
-    # that is a decision rather than a fact, so it is the one the client sends.
-    margin_sar           = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    # Both computed in save() — see cars/pricing.py. Never accepted from a client.
+    # Informational only: the cost lines summed in SAR, computed in save().
+    # See cars/pricing.py — it is NOT the price.
     total_landed_cost    = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # The asking price, entered by the importer. `price` mirrors it.
     final_price_sar      = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    # The rate used, and when it was last refreshed, so a stored total can be
-    # explained after the market has moved.
-    fx_rate_used         = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    fx_rate_date         = models.DateTimeField(null=True, blank=True)
 
     # Group 3: Import Status
     import_status = models.CharField(max_length=25, choices=IMPORT_STATUS_CHOICES, default='available', blank=True)
@@ -905,16 +903,18 @@ class Listing(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean()
-        # Pricing is derived here rather than in the serializer so that the
+        # The landed cost is derived here rather than in the serializer so the
         # admin, a shell session and a data migration all produce the same
-        # numbers as the API does.
+        # figure as the API does. The PRICE is not derived: it is whatever the
+        # importer entered (see cars/pricing.py).
         if not kwargs.pop('skip_pricing', False):
-            from .pricing import apply_pricing
+            from .pricing import apply_landed_cost
 
-            computed = apply_pricing(self)
+            before = self.total_landed_cost
+            landed = apply_landed_cost(self)
             update_fields = kwargs.get('update_fields')
-            if computed and update_fields is not None:
-                kwargs['update_fields'] = set(update_fields) | set(computed) | {'price'}
+            if update_fields is not None and landed != before:
+                kwargs['update_fields'] = set(update_fields) | {'total_landed_cost'}
         super().save(*args, **kwargs)
 
     def __str__(self):

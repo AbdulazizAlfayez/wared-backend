@@ -29,7 +29,7 @@ class ReviewRuleTests(TestCase):
             ('year', 2023, 2024),
             ('vin', 'A' * 17, 'B' * 17),
             ('price', '100000', '90000'),
-            ('margin_sar', '5000', '9000'),
+            ('final_price_sar', '100000', '90000'),
             ('source_price', '10000', '12000'),
         ):
             with self.subTest(field=field):
