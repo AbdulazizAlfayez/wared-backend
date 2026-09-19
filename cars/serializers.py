@@ -167,9 +167,13 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
     )
     # Filled in `to_representation` for the owner and admins only.
     owner_feedback = serializers.SerializerMethodField()
+    missing_for_submit = serializers.SerializerMethodField()
 
     def get_owner_feedback(self, obj):
         return self._owner_feedback(obj)
+
+    def get_missing_for_submit(self, obj):
+        return self._missing_for_submit(obj)
 
     owner_id = serializers.IntegerField(source='owner.id', read_only=True)
     # Nested owner (importer) info. Name/role are public (shown on the car
@@ -235,7 +239,8 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'owner_id', 'owner', 'showroom', 'workshop',
             'is_active', 'approved_by', 'approved_at', 'created_at',
             # Status tracking (Phase 2.14)
-            'rejection_reason', 'admin_notes', 'owner_feedback', 'status_changed_at',
+            'rejection_reason', 'admin_notes', 'owner_feedback', 'missing_for_submit',
+            'submitted_at', 'status_changed_at',
             # View counters (Phase 2.13)
             'view_count', 'unique_view_count', 'view_stats',
             # Images
@@ -278,7 +283,8 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'make_display', 'model_display', 'description_display',
             'color_display', 'city_display', 'region_display',
             'view_count', 'unique_view_count', 'view_stats',
-            'rejection_reason', 'admin_notes', 'owner_feedback', 'status_changed_at',
+            'rejection_reason', 'admin_notes', 'owner_feedback', 'missing_for_submit',
+            'submitted_at', 'status_changed_at',
             'is_featured', 'is_highlighted', 'is_top_search', 'is_homepage',
             'promotion_priority', 'is_promoted', 'active_promotion',
             'owner_verified', 'owner_verification_level',
@@ -433,10 +439,34 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
         # but never what to change.
         if is_owner or is_admin:
             data['owner_feedback'] = self._owner_feedback(instance)
+            data['missing_for_submit'] = self._missing_for_submit(instance)
         else:
             data.pop('owner_feedback', None)
+            data.pop('missing_for_submit', None)
 
         return data
+
+    @classmethod
+    def compute_missing_for_submit(cls, listing):
+        """
+        What still stands between this listing and the review queue.
+
+        Field names, in the order the form asks for them, so a client can say
+        exactly what is left rather than "something is missing". Empty means
+        `submit` will succeed.
+        """
+        missing = []
+        for field in cls.REQUIRED_FOR_SUBMIT:
+            value = getattr(listing, field, None)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                missing.append(field)
+        if listing.final_price_sar is None and listing.price is None:
+            missing.append('final_price_sar')
+        return missing
+
+    def _missing_for_submit(self, instance):
+        """Owner-facing only; a buyer has no business knowing."""
+        return self.compute_missing_for_submit(instance)
 
     def _owner_feedback(self, instance):
         """What the reviewer asked for, or None when nothing is outstanding."""
@@ -530,6 +560,36 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
     PRICE_MIN = 5000
     PRICE_MAX = 5000000
 
+    #: Everything a listing needs before it may enter the review queue.
+    #: `price`/`final_price_sar` is handled separately — either satisfies it.
+    REQUIRED_FOR_SUBMIT = ('title', 'make', 'model', 'year', 'mileage', 'city')
+
+    #: What a draft may leave empty. A half-filled form is the entire point of
+    #: a draft, so the only things asked for are the three that identify the
+    #: car — and `title` is composed from them when it is missing.
+    DRAFT_OPTIONAL = ('title', 'city', 'mileage', 'price', 'final_price_sar', 'description', 'vin')
+
+    def __init__(self, *args, **kwargs):
+        """
+        Relax the required fields when the payload parks a draft.
+
+        Field-level `required`/`allow_blank` runs before `validate()`, so a
+        draft has to be recognised here or the blank `title` and `city` are
+        rejected before any of our own rules are reached. This is what made
+        "This field may not be blank." the answer to saving a half-filled form.
+        """
+        super().__init__(*args, **kwargs)
+        if not self._is_draft(getattr(self, 'initial_data', {}) or {}):
+            return
+        for name in self.DRAFT_OPTIONAL:
+            field = self.fields.get(name)
+            if field is None:
+                continue
+            field.required = False
+            field.allow_null = True
+            if hasattr(field, 'allow_blank'):
+                field.allow_blank = True
+
     def _is_draft(self, data):
         """
         Whether this payload leaves the listing parked as a draft.
@@ -542,7 +602,9 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             if hasattr(self, 'initial_data') else ''
         if requested:
             return requested == 'draft'
-        return bool(self.instance and self.instance.status == 'draft')
+        # `instance` is a QuerySet under `many=True`; there is no single
+        # status to read and a list serializer never validates a payload.
+        return getattr(self.instance, 'status', None) == 'draft'
 
     def _sent_price(self, data):
         """
@@ -561,9 +623,39 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             return None
         return self.instance.final_price_sar or self.instance.price
 
+    @staticmethod
+    def compose_title(data, instance=None):
+        """"year make model" — what both clients would have typed anyway."""
+        def pick(field):
+            value = data.get(field)
+            if value in (None, ''):
+                value = getattr(instance, field, None) if instance else None
+            return str(value).strip() if value not in (None, '') else ''
+
+        return ' '.join(part for part in (pick('year'), pick('make'), pick('model')) if part)
+
     def validate(self, data):
         errors = {}
         current_year = datetime.date.today().year
+
+        # `mileage` and `city` are nullable on the model so a draft can be
+        # saved half-filled — which means DRF no longer demands them of
+        # anybody. Anything that is not a draft still has to carry them.
+        if not self._is_draft(data):
+            for field in ('mileage', 'city'):
+                value = data.get(field, getattr(self.instance, field, None))
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    errors[field] = 'This field is required.'
+
+        # A draft saved from a half-filled form has no title yet. The rule is
+        # "title OR make+model", so compose one rather than demand it — the
+        # column is NOT NULL and an empty title makes an unreadable queue row.
+        if not (data.get('title') or '').strip():
+            composed = self.compose_title(data, self.instance)
+            if composed:
+                data['title'] = composed
+            elif not self._is_draft(data):
+                errors['title'] = 'This field is required.'
 
         # Price: the importer's number, within the marketplace bounds. The
         # cost lines are informational and never move it (see cars/pricing.py).
