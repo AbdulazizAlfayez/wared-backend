@@ -93,6 +93,16 @@ def notify(
     except Exception:
         pass  # Never let a WebSocket failure break the main action
 
+    # The phone, if the user has one registered and has not opted out. Queued,
+    # never sent inline: this runs inside request paths and an Expo round trip
+    # would put a network call on the user's critical path.
+    try:
+        from .tasks import dispatch_push
+
+        dispatch_push(notification)
+    except Exception:
+        pass  # A missed push must never fail the thing that caused it.
+
     return notification
 
 

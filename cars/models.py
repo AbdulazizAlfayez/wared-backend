@@ -559,7 +559,9 @@ class WorkshopReview(models.Model):
 _LISTING_VALID_TRANSITIONS = {
     'draft':              {'pending'},
     'pending':            {'approved', 'rejected', 'changes_requested'},
-    'approved':           {'sold'},
+    # `pending` because an edit to the price, identity or photos of an
+    # approved listing sends it back for review — see cars/review_rules.py.
+    'approved':           {'sold', 'pending'},
     'rejected':           {'pending'},
     'changes_requested':  {'pending'},
     'sold':               set(),  # terminal — no further transitions allowed
@@ -799,8 +801,16 @@ class Listing(models.Model):
     vat_amount           = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     inspection_fee       = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     transportation_cost  = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    # What the importer adds on top of the landed cost. The one pricing input
+    # that is a decision rather than a fact, so it is the one the client sends.
+    margin_sar           = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # Both computed in save() — see cars/pricing.py. Never accepted from a client.
     total_landed_cost    = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     final_price_sar      = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # The rate used, and when it was last refreshed, so a stored total can be
+    # explained after the market has moved.
+    fx_rate_used         = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    fx_rate_date         = models.DateTimeField(null=True, blank=True)
 
     # Group 3: Import Status
     import_status = models.CharField(max_length=25, choices=IMPORT_STATUS_CHOICES, default='available', blank=True)
@@ -895,19 +905,17 @@ class Listing(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean()
-        super().save(*args, **kwargs)
+        # Pricing is derived here rather than in the serializer so that the
+        # admin, a shell session and a data migration all produce the same
+        # numbers as the API does.
+        if not kwargs.pop('skip_pricing', False):
+            from .pricing import apply_pricing
 
-    def calculate_total_landed_cost(self):
-        """Sum all import cost components (source_price treated as SAR equivalent here)."""
-        from decimal import Decimal
-        total = Decimal('0')
-        for field in [
-            self.source_price, self.shipping_cost, self.customs_duty_amount,
-            self.vat_amount, self.inspection_fee, self.transportation_cost,
-        ]:
-            if field is not None:
-                total += field
-        return total
+            computed = apply_pricing(self)
+            update_fields = kwargs.get('update_fields')
+            if computed and update_fields is not None:
+                kwargs['update_fields'] = set(update_fields) | set(computed) | {'price'}
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.title} ({self.year} {self.make} {self.model})"

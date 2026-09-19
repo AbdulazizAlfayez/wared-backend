@@ -34,9 +34,13 @@ class NotificationPreference(models.Model):
     order_updates_sms   = models.BooleanField(default=True)
     order_updates_push  = models.BooleanField(default=True)
 
-    # Channel toggles (future phases)
+    # Channel toggles
     email_notifications = models.BooleanField(default=True)
     sms_notifications   = models.BooleanField(default=False)
+    #: The master switch for device push. The per-type toggles above still
+    #: apply first — this only decides whether an allowed notification also
+    #: leaves the building.
+    push_notifications  = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'notification_preferences'
@@ -109,3 +113,41 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.notification_type} → user {self.recipient_id}: {self.title[:60]}"
+
+
+class Device(models.Model):
+    """
+    A phone that has asked to receive push notifications.
+
+    One row per Expo push token. The token is the identity — the same user
+    signing in on a second phone gets a second row, and a token that moves to
+    a different account is reassigned rather than duplicated, because Expo
+    will happily deliver to a token whoever registered it last.
+    """
+
+    PLATFORM_CHOICES = [
+        ('ios', 'iOS'),
+        ('android', 'Android'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='devices',
+    )
+    expo_push_token = models.CharField(max_length=255, unique=True)
+    platform = models.CharField(max_length=10, choices=PLATFORM_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    #: Set when Expo tells us the token is dead, so we stop trying.
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'push_devices'
+        ordering = ['-last_seen_at']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f'{self.user_id} · {self.platform} · {self.expo_push_token[:24]}…'

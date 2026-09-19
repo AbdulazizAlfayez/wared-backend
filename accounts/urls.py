@@ -1,10 +1,12 @@
 from django.urls import path
 
 from .mobile_views import (
+    MobileGoogleLoginView,
     MobileLoginView,
     MobileLogoutView,
     MobileRefreshView,
     MobileRegisterView,
+    PasswordResetCodeRequestView,
 )
 from .views import (
     AdminUserListView,
@@ -55,6 +57,11 @@ urlpatterns = [
     path('auth/mobile/register/', MobileRegisterView.as_view(), name='mobile-register'),
     path('auth/mobile/refresh/',  MobileRefreshView.as_view(),  name='mobile-refresh'),
     path('auth/mobile/logout/',   MobileLogoutView.as_view(),   name='mobile-logout'),
+    path('auth/mobile/google/',   MobileGoogleLoginView.as_view(), name='mobile-google'),
+
+    # In-app reset: a 6-digit code by email. The link flow below is unchanged.
+    path('auth/password-reset/request/', PasswordResetCodeRequestView.as_view(), name='password-reset-code-request'),
+    # The confirm endpoint below accepts BOTH shapes — see PasswordResetConfirmView.
 
     # Password reset
     path('auth/password-reset/', PasswordResetRequestView.as_view(), name='password-reset-request'),

@@ -931,6 +931,12 @@ class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        # Two ways in, one endpoint. The website sends the uid+token from an
+        # emailed link; the app sends email+code from an emailed code, because
+        # a phone cannot open a link that lands in a desktop browser session.
+        if request.data.get('code'):
+            return self._confirm_with_code(request)
+
         serializer = PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -965,6 +971,53 @@ class PasswordResetConfirmView(APIView):
             object_id=user.pk,
             ip_address=get_client_ip(request),
         )
+        return Response(
+            {'detail': 'Password has been reset successfully. Please login with your new password.'},
+            status=status.HTTP_200_OK,
+        )
+
+    def _confirm_with_code(self, request):
+        """The app's path: a 6-digit code instead of a signed link."""
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from .otp import verify_otp
+
+        email        = (request.data.get('email') or '').strip().lower()
+        code         = (request.data.get('code') or '').strip()
+        new_password = request.data.get('new_password') or ''
+
+        missing = {
+            field: 'This field is required.'
+            for field, value in (('email', email), ('new_password', new_password))
+            if not value
+        }
+        if missing:
+            return Response(missing, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(email__iexact=email, is_active=True).first()
+        # A wrong address and a wrong code get the same answer, so neither
+        # reveals whether the account exists.
+        if user is None:
+            return Response({'detail': 'Invalid or expired code.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        ok, message = verify_otp(user, code, purpose='password_reset')
+        if not ok:
+            return Response({'detail': message}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            validate_password(new_password, user=user)
+        except DjangoValidationError as exc:
+            return Response({'new_password': list(exc.messages)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+        _blacklist_all_tokens(user)
+
+        log_action(user=user, action='password_reset_completed', model_name='User',
+                   object_id=user.pk, ip_address=get_client_ip(request))
         return Response(
             {'detail': 'Password has been reset successfully. Please login with your new password.'},
             status=status.HTTP_200_OK,

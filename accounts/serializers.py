@@ -82,6 +82,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
     city_name  = serializers.SerializerMethodField()
     has_accepted_current_terms = serializers.SerializerMethodField()
 
+    email_verified = serializers.BooleanField(source='is_email_verified', read_only=True)
+    phone_verified = serializers.BooleanField(source='is_phone_verified', read_only=True)
+
     class Meta:
         model = User
         fields = (
@@ -89,6 +92,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'avatar_url', 'bio', 'city_obj', 'city_name',
             'show_phone', 'show_email', 'date_joined',
             'is_email_verified', 'is_phone_verified',
+            # The unprefixed aliases the verification-status endpoint already
+            # answers with. Both names, one source, so a client written against
+            # either reads the same truth.
+            'email_verified', 'phone_verified',
             'is_identity_verified', 'is_business_verified', 'verification_level',
             'has_accepted_current_terms',
         )

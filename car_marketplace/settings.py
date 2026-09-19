@@ -538,6 +538,11 @@ OTP_COOLDOWN_SECONDS = 60  # minimum seconds between OTP requests
 # Google OAuth2
 # ---------------------------------------------------------------------------
 GOOGLE_OAUTH2_CLIENT_ID     = os.environ.get('GOOGLE_OAUTH2_CLIENT_ID', '')
+# A Google ID token minted for the iOS or Android app carries that platform's
+# client id in `aud`, not the website's — so mobile sign-in has to accept those
+# audiences too, or every mobile token fails verification.
+GOOGLE_OAUTH2_IOS_CLIENT_ID     = os.environ.get('GOOGLE_OAUTH2_IOS_CLIENT_ID', '')
+GOOGLE_OAUTH2_ANDROID_CLIENT_ID = os.environ.get('GOOGLE_OAUTH2_ANDROID_CLIENT_ID', '')
 GOOGLE_OAUTH2_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH2_CLIENT_SECRET', '')
 GOOGLE_OAUTH2_REDIRECT_URI  = 'http://localhost:3000/auth/google/callback'
 

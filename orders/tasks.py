@@ -444,6 +444,17 @@ def create_in_app_notification(user_id, order_id, title, message, notification_t
             metadata={'order_id': order_id},
         )
 
+        # This task creates its Notification directly instead of going through
+        # `notifications.utils.notify`, so the push hook there never sees an
+        # order status change. Dispatched explicitly rather than refactoring
+        # this path, which carries its own preference gate above.
+        try:
+            from notifications.tasks import dispatch_push
+
+            dispatch_push(notif)
+        except Exception:
+            pass
+
         # Best-effort WebSocket push via existing notify utility
         try:
             from asgiref.sync import async_to_sync
