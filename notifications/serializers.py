@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Notification, NotificationPreference
+from .models import Device, Notification, NotificationPreference
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -92,6 +92,34 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             'appointment_confirmed', 'appointment_rejected', 'appointment_cancelled',
             'price_drop', 'listing_expiring', 'system',
             # Channel toggles
-            'email_notifications', 'sms_notifications',
+            'email_notifications', 'sms_notifications', 'push_notifications',
+            # Present on the model since Phase C but never exposed, so the app
+            # could not read or change them.
+            'order_updates_email', 'order_updates_sms', 'order_updates_push',
         )
         read_only_fields = ('id',)
+
+
+class DeviceSerializer(serializers.ModelSerializer):
+    """A registered phone. The token is the identity; the user comes from auth."""
+
+    # The model's `unique=True` would otherwise make DRF refuse a token it has
+    # seen before — which is exactly the case the view handles by reassigning
+    # it. Without this, a second account on the same phone gets a 400 and
+    # silently never receives a push again.
+    expo_push_token = serializers.CharField(max_length=255, validators=[])
+
+    class Meta:
+        model = Device
+        fields = ('id', 'expo_push_token', 'platform', 'is_active', 'created_at', 'last_seen_at')
+        read_only_fields = ('id', 'is_active', 'created_at', 'last_seen_at')
+
+    def validate_expo_push_token(self, value):
+        from .push import looks_like_expo_token
+
+        value = (value or '').strip()
+        if not looks_like_expo_token(value):
+            raise serializers.ValidationError(
+                'Not an Expo push token. Expected ExponentPushToken[…].'
+            )
+        return value

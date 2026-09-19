@@ -832,3 +832,77 @@ def send_order_cancelled_email(order_id):
             )
         except Exception as exc:
             logger.error("send_order_cancelled_email (importer) failed for order %s: %s", order_id, exc)
+
+
+# ---------------------------------------------------------------------------
+# Device push
+# ---------------------------------------------------------------------------
+
+def _push_enabled(user) -> bool:
+    """The master push switch. Per-type toggles are applied before this."""
+    prefs, _ = NotificationPreference.objects.get_or_create(user=user)
+    return prefs.push_notifications
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30,
+             name='notifications.tasks.send_push_for_notification')
+def send_push_for_notification(self, notification_id: int) -> str:
+    """
+    Delivers an already-created Notification to the recipient's phones.
+
+    Takes an id rather than the text so the push always says exactly what the
+    in-app row says — one source of wording, and nothing to keep in step.
+    """
+    from .models import Device, Notification
+    from .push import send_expo_push
+
+    try:
+        notification = Notification.objects.select_related('recipient').get(pk=notification_id)
+    except Notification.DoesNotExist:
+        return 'notification gone'
+
+    recipient = notification.recipient
+    if not _push_enabled(recipient):
+        return 'push disabled'
+
+    devices = list(Device.objects.filter(user=recipient, is_active=True))
+    if not devices:
+        return 'no devices'
+
+    data = {
+        'notification_id': notification.id,
+        'type': notification.notification_type,
+        'listing_id': notification.listing_id,
+        **(notification.metadata or {}),
+    }
+
+    try:
+        dead = send_expo_push(
+            [device.expo_push_token for device in devices],
+            notification.title,
+            notification.message,
+            data,
+        )
+    except Exception as exc:
+        raise self.retry(exc=exc)
+
+    if dead:
+        # Uninstalled or rotated: stop carrying them on every future send.
+        Device.objects.filter(expo_push_token__in=dead).update(is_active=False)
+
+    return f'sent to {len(devices) - len(dead)} device(s)'
+
+
+def dispatch_push(notification) -> None:
+    """
+    Queue a push for a notification, without ever failing its caller.
+
+    Called from inside request paths, so it must not raise and must not block:
+    the Expo round trip happens in the task, not here.
+    """
+    if notification is None:
+        return
+    try:
+        send_push_for_notification.delay(notification.pk)
+    except Exception:  # pragma: no cover — broker down, queue unavailable
+        logger.warning('Could not queue push for notification %s', notification.pk)

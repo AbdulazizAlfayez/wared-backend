@@ -85,7 +85,7 @@ def _car_snapshot(car):
 
 
 def _listing_snapshot(listing):
-    return {
+    snapshot = {
         'title': listing.title,
         'make': listing.make,
         'model': listing.model,
@@ -96,6 +96,17 @@ def _listing_snapshot(listing):
         'city': listing.city,
         'vin': listing.vin,
     }
+    # The pricing inputs too, so `requires_rereview` can see a money change.
+    from .review_rules import REVIEW_TRIGGERING_FIELDS
+
+    for field in REVIEW_TRIGGERING_FIELDS:
+        if field not in snapshot:
+            value = getattr(listing, field, None)
+            # Stringified because this dict is written to the audit log's JSON
+            # column, and a Decimal is not JSON serialisable. `_normalise` in
+            # review_rules turns them back into numbers before comparing.
+            snapshot[field] = None if value is None else str(value)
+    return snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -774,11 +785,18 @@ class ListingViewSet(viewsets.ModelViewSet):
         #     except DealerSubscription.DoesNotExist:
         #         pass
 
-        instance = serializer.save(owner=user, status='pending')
-        _notify_admins_new_listing(instance)
+        # A listing is born pending unless the owner explicitly parks it as a
+        # draft. Drafts are invisible publicly — `public_market_q` requires
+        # `status='approved'` — and stay freely editable until submitted.
+        requested = (self.request.data.get('status') or '').strip().lower()
+        initial_status = 'draft' if requested == 'draft' else 'pending'
+        instance = serializer.save(owner=user, status=initial_status)
 
-        # Phase 5.4 — Increment daily limit counter
-        increment_listing_count(user)
+        if initial_status != 'draft':
+            _notify_admins_new_listing(instance)
+            # A draft is not in the queue and must not burn the daily quota —
+            # it is counted when it is submitted.
+            increment_listing_count(user)
 
         # Phase 5.4 — Log IP action
         ip = get_client_ip(self.request)
@@ -857,6 +875,46 @@ class ListingViewSet(viewsets.ModelViewSet):
             instance.status = 'pending'
             instance.save(update_fields=['status'])
             _notify_admins_new_listing(instance)
+
+        # An approved listing is a promise to buyers — this car, these photos,
+        # this price. Changing any of that has to be looked at again; fixing a
+        # typo in the description does not. `public_market_q` requires
+        # `status='approved'`, so moving it to pending takes it off the market
+        # until a reviewer puts it back.
+        from .review_rules import changed_review_fields, requires_rereview
+
+        requires_review = False
+        if (old_values.get('status') == 'approved'
+                and instance.owner == request.user
+                and request.user.role != 'admin'):
+            new_values = _listing_snapshot(instance)
+            if requires_rereview('approved', old_values, new_values):
+                triggered = sorted(changed_review_fields(old_values, new_values))
+                instance.status = 'pending'
+                instance.save(update_fields=['status'])
+                _notify_admins_new_listing(instance)
+                requires_review = True
+                try:
+                    from notifications.utils import notify
+
+                    notify(
+                        recipient=instance.owner,
+                        notification_type='system',
+                        title='إعلانك عاد للمراجعة / Your listing is back in review',
+                        message=(
+                            f'تم تعديل "{instance.title}" ({", ".join(triggered)}) '
+                            f'ولن يظهر للمشترين حتى تعتمده وارد مرة أخرى.'
+                        ),
+                        listing=instance,
+                        metadata={'requires_review_fields': triggered},
+                    )
+                except Exception:
+                    pass  # A missed notification must not fail the edit.
+
+        if isinstance(response.data, dict):
+            # Clients warn before saving the next one; the flag says whether
+            # this save actually cost the listing its place on the market.
+            response.data['requires_review'] = requires_review
 
         return response
 
@@ -943,6 +1001,56 @@ class ListingViewSet(viewsets.ModelViewSet):
 
         serializer = ListingSerializer(listings, many=True, context={'request': request})
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='submit', permission_classes=[IsAuthenticated])
+    def submit(self, request, pk=None):
+        """
+        POST /api/listings/{id}/submit/ — owner sends a draft for review.
+
+        The only transition an owner may make themselves. Everything after
+        this belongs to a reviewer.
+        """
+        listing = self.get_object()
+
+        if listing.owner_id != request.user.id and getattr(request.user, 'role', '') != 'admin':
+            return Response(
+                {'error': 'You do not have permission to submit this listing.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if listing.status != 'draft':
+            return Response(
+                {
+                    'error': f"Only a draft can be submitted; this listing is '{listing.status}'.",
+                    'status': listing.status,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        listing.status = 'pending'
+        try:
+            listing.save(update_fields=['status'])
+        except DjangoValidationError as exc:
+            msgs = exc.message_dict if hasattr(exc, 'message_dict') else {'error': exc.messages}
+            return Response(msgs, status=status.HTTP_400_BAD_REQUEST)
+
+        from fraud.utils import increment_listing_count
+
+        _notify_admins_new_listing(listing)
+        # Counted now rather than at create: a draft that is never submitted
+        # should not cost the importer a slot.
+        increment_listing_count(listing.owner)
+
+        log_action(
+            user=request.user,
+            action='update',
+            model_name='Listing',
+            object_id=listing.pk,
+            old_value={'status': 'draft'},
+            new_value={'status': 'pending'},
+            ip_address=get_client_ip(request),
+        )
+        return Response(self.get_serializer(listing).data)
 
     @action(detail=True, methods=['patch'], url_path='approve', permission_classes=[IsAuthenticated])
     def approve(self, request, pk=None):

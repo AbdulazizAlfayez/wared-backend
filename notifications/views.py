@@ -1,11 +1,16 @@
-from rest_framework import mixins, status, viewsets
+from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 
-from .models import Notification, NotificationPreference
-from .serializers import NotificationPreferenceSerializer, NotificationSerializer
+from .models import Device, Notification, NotificationPreference
+from .serializers import (
+    DeviceSerializer,
+    NotificationPreferenceSerializer,
+    NotificationSerializer,
+)
 
 
 @extend_schema(tags=['Notifications'])
@@ -111,3 +116,52 @@ class NotificationViewSet(
             prefs.refresh_from_db()
 
         return Response(NotificationPreferenceSerializer(prefs).data)
+
+
+class DeviceView(APIView):
+    """
+    POST /api/devices/   — register this phone for push, or move the token here
+    DELETE /api/devices/ — stop pushing to it (sign-out, or the user opts out)
+
+    The token is the key, not the user: the same phone signing into a second
+    account must not keep delivering that account's notifications to the first,
+    so a token already on file is reassigned rather than duplicated.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = DeviceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token = serializer.validated_data['expo_push_token']
+
+        device, created = Device.objects.update_or_create(
+            expo_push_token=token,
+            defaults={
+                'user': request.user,
+                'platform': serializer.validated_data['platform'],
+                'is_active': True,
+            },
+        )
+        return Response(
+            DeviceSerializer(device).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def delete(self, request):
+        token = (request.data.get('expo_push_token') or '').strip()
+        if not token:
+            return Response(
+                {'expo_push_token': 'This field is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Scoped to the caller: a token you do not own is not yours to remove.
+        deleted, _ = Device.objects.filter(
+            user=request.user, expo_push_token=token,
+        ).delete()
+        if not deleted:
+            return Response(
+                {'detail': 'No such device for this account.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)

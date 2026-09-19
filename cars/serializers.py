@@ -131,7 +131,14 @@ class ListingImageSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 class CostBreakdownSerializer(serializers.Serializer):
-    """Read-only serializer exposing cost breakdown fields plus a calculated total."""
+    """
+    The stored cost breakdown, read-only.
+
+    `calculated_total` used to live here: a property that summed `source_price`
+    — a foreign-currency amount — straight into the SAR costs, reporting
+    SAR 75,050,506 for a SAR 254,256 Korean car. It is gone. `total_landed_cost`
+    is the real figure, computed in `cars/pricing.py` at save time.
+    """
 
     source_price        = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
     source_currency     = serializers.CharField(read_only=True)
@@ -142,14 +149,24 @@ class CostBreakdownSerializer(serializers.Serializer):
     transportation_cost = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True, allow_null=True)
     total_landed_cost   = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
     final_price_sar     = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
-    calculated_total    = serializers.SerializerMethodField()
-
-    def get_calculated_total(self, obj):
-        return obj.calculate_total_landed_cost()
+    margin_sar          = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
+    fx_rate_used        = serializers.DecimalField(max_digits=12, decimal_places=6, read_only=True, allow_null=True)
+    fx_rate_date        = serializers.DateTimeField(read_only=True, allow_null=True)
 
 
 class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSerializer):
     """Serializer for Listing (api/listings). Includes nested images and primary_image URL."""
+
+    # Derived from the import pricing whenever there is any, so it cannot be
+    # unconditionally required — see `validate`.
+    price = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True,
+    )
+    # Filled in `to_representation` for the owner and admins only.
+    owner_feedback = serializers.SerializerMethodField()
+
+    def get_owner_feedback(self, obj):
+        return self._owner_feedback(obj)
 
     owner_id = serializers.IntegerField(source='owner.id', read_only=True)
     # Nested owner (importer) info. Name/role are public (shown on the car
@@ -215,7 +232,7 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'owner_id', 'owner', 'showroom', 'workshop',
             'is_active', 'approved_by', 'approved_at', 'created_at',
             # Status tracking (Phase 2.14)
-            'rejection_reason', 'admin_notes', 'status_changed_at',
+            'rejection_reason', 'admin_notes', 'owner_feedback', 'status_changed_at',
             # View counters (Phase 2.13)
             'view_count', 'unique_view_count', 'view_stats',
             # Images
@@ -230,7 +247,8 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'original_listing_url', 'source_price', 'source_currency',
             # Import — Cost Breakdown
             'shipping_cost', 'customs_duty_amount', 'vat_amount', 'inspection_fee',
-            'transportation_cost', 'total_landed_cost', 'final_price_sar',
+            'transportation_cost', 'margin_sar',
+            'total_landed_cost', 'final_price_sar', 'fx_rate_used', 'fx_rate_date',
             'cost_breakdown',
             # Import — Status & Reservation
             'import_status', 'is_reserved', 'reservation_state',
@@ -257,11 +275,15 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'make_display', 'model_display', 'description_display',
             'color_display', 'city_display', 'region_display',
             'view_count', 'unique_view_count', 'view_stats',
-            'rejection_reason', 'admin_notes', 'status_changed_at',
+            'rejection_reason', 'admin_notes', 'owner_feedback', 'status_changed_at',
             'is_featured', 'is_highlighted', 'is_top_search', 'is_homepage',
             'promotion_priority', 'is_promoted', 'active_promotion',
             'owner_verified', 'owner_verification_level',
             'cost_breakdown', 'is_favorited_by_me',
+            # Pricing is computed in save() from source_price, the SAR costs and
+            # margin_sar — see cars/pricing.py. `price` follows final_price_sar,
+            # so a client that sends one is ignored rather than obeyed.
+            'total_landed_cost', 'final_price_sar', 'fx_rate_used', 'fx_rate_date',
             'like_count', 'comment_count', 'is_liked',
             'reservation_state',
         )
@@ -303,11 +325,6 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
     def validate_price(self, value):
         if value is not None and (value < 5000 or value > 5000000):
             raise serializers.ValidationError('Price must be between 5,000 and 5,000,000 SAR.')
-        return value
-
-    def validate_final_price_sar(self, value):
-        if value is not None and (value < 5000 or value > 5000000):
-            raise serializers.ValidationError('Final price must be between 5,000 and 5,000,000 SAR.')
         return value
 
     def validate_mileage(self, value):
@@ -407,7 +424,24 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
         if not (is_owner or is_admin):
             data.pop('rejection_reason', None)
 
+        # owner_feedback: the reviewer's words, for the person who has to act
+        # on them. `request-changes` writes to `admin_notes`, which is stripped
+        # above — so without this an owner could see that changes were wanted
+        # but never what to change.
+        if is_owner or is_admin:
+            data['owner_feedback'] = self._owner_feedback(instance)
+        else:
+            data.pop('owner_feedback', None)
+
         return data
+
+    def _owner_feedback(self, instance):
+        """What the reviewer asked for, or None when nothing is outstanding."""
+        if instance.status == 'changes_requested':
+            return (instance.admin_notes or '').strip() or None
+        if instance.status == 'rejected':
+            return (instance.rejection_reason or '').strip() or None
+        return None
 
     def get_view_stats(self, obj):
         """
@@ -490,9 +524,58 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'days_remaining': promo.days_remaining,
         }
 
+    PRICE_MIN = 5000
+    PRICE_MAX = 5000000
+
+    def _preview_pricing(self, data):
+        """
+        The pricing this payload would produce, without saving anything.
+
+        Runs the same function `save()` will, against the incoming values
+        layered over the instance being edited, so a computed price that lands
+        outside the accepted range is refused with a field error instead of a
+        500 from deep inside `save()`.
+        """
+        from types import SimpleNamespace
+
+        from .pricing import MissingExchangeRate, compute_pricing
+
+        fields = (
+            'source_price', 'source_currency', 'shipping_cost', 'customs_duty_amount',
+            'vat_amount', 'inspection_fee', 'transportation_cost', 'margin_sar',
+        )
+        current = {
+            field: (
+                data[field] if field in data
+                else getattr(self.instance, field, None)
+            )
+            for field in fields
+        }
+        try:
+            return compute_pricing(SimpleNamespace(**current)), None
+        except MissingExchangeRate as exc:
+            return None, str(exc)
+
     def validate(self, data):
         errors = {}
         current_year = datetime.date.today().year
+
+        computed, rate_error = self._preview_pricing(data)
+        if rate_error:
+            errors['source_currency'] = rate_error
+        elif computed:
+            final = computed['final_price_sar']
+            if final < self.PRICE_MIN or final > self.PRICE_MAX:
+                # The importer controls this through margin_sar and the costs,
+                # so the message says which number to move.
+                errors['margin_sar'] = (
+                    f'The resulting price is SAR {final:,.0f}. '
+                    f'It must be between {self.PRICE_MIN:,} and {self.PRICE_MAX:,} SAR — '
+                    f'adjust the margin or the costs.'
+                )
+        elif not self.instance and data.get('price') is None:
+            # No import pricing to derive from, so a price has to be given.
+            errors['price'] = 'This field is required.'
 
         # Year: 1980 to current_year + 1
         year = data.get('year')
