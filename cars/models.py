@@ -633,7 +633,8 @@ class Listing(models.Model):
     ]
 
     # --- Core fields ---
-    title       = models.CharField(max_length=255)
+    # Composed from year/make/model when a draft is saved without one.
+    title       = models.CharField(max_length=255, blank=True, default='')
     make        = models.CharField(max_length=100)
     model       = models.CharField(max_length=100)
     year        = models.IntegerField()
@@ -641,8 +642,10 @@ class Listing(models.Model):
     # form. Submitting requires a price (cars/serializers.py), and an approved
     # listing therefore always has one.
     price       = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    mileage     = models.IntegerField()
-    city        = models.CharField(max_length=100)
+    # Null only while a listing is a draft, like `price` above: the importer
+    # saved a half-filled form. Submitting requires both (cars/serializers.py).
+    mileage     = models.IntegerField(null=True, blank=True)
+    city        = models.CharField(max_length=100, blank=True, default='')
     description = models.TextField(blank=True, null=True)
     color       = models.CharField(max_length=50, blank=True)
 
@@ -736,6 +739,8 @@ class Listing(models.Model):
         on_delete=models.SET_NULL,
         related_name='approved_listings',
     )
+    #: When the owner last sent this listing to the queue.
+    submitted_at = models.DateTimeField(null=True, blank=True)
     approved_at = models.DateTimeField(null=True, blank=True)
 
     # --- Phase 4.6 — Promotion flags (denormalized for fast queries) ---

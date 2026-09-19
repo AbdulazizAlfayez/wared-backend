@@ -183,14 +183,33 @@ def _notify_listing_status_change(instance, old_status: str, request_user) -> No
         _send_listing_email(instance.pk, 'changes_requested', note)
 
 
+#: The states an owner may submit from. `draft` has never been in the queue;
+#: the other two were, and came back with something to fix. Nothing here
+#: requires the listing or its owner to have been approved before — approval
+#: is what submitting asks for.
+SUBMITTABLE_STATUSES = frozenset({'draft', 'changes_requested', 'rejected'})
+
+
 def _notify_admins_new_listing(listing):
-    """Notify admins when a listing is submitted or resubmitted for review."""
+    """
+    Tell every admin a listing is waiting — in the app and by email.
+
+    Best-effort by design: a review queue that is one notification short is a
+    smaller problem than a submit button that 500s. Each admin is handled
+    separately so one bad address cannot swallow the rest.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
     try:
-        from django.contrib.auth import get_user_model
-        from notifications.utils import notify
-        User = get_user_model()
-        admins = User.objects.filter(role='admin', is_active=True)
-        for admin in admins:
+        admins = list(User.objects.filter(role='admin', is_active=True))
+    except Exception:
+        return
+
+    for admin in admins:
+        try:
+            from notifications.utils import notify
+
             notify(
                 recipient=admin,
                 notification_type='listing_submitted',
@@ -198,8 +217,31 @@ def _notify_admins_new_listing(listing):
                 message=f'{listing.owner.name} قدّم إعلان: {listing.title}',
                 listing=listing,
             )
-    except Exception:
-        pass
+        except Exception:
+            pass
+
+        if not admin.email:
+            continue
+        try:
+            from notifications.emails import send_templated_email
+
+            send_templated_email(
+                to_email=admin.email,
+                subject=f'إعلان جديد يحتاج مراجعة · {listing.title}',
+                template_name='listing_submitted_admin',
+                context={
+                    'listing_title': listing.title,
+                    'listing_id': listing.pk,
+                    'importer_name': getattr(listing.owner, 'name', '') or listing.owner.email,
+                    'make': listing.make,
+                    'model': listing.model,
+                    'year': listing.year,
+                    'city': listing.city,
+                    'price': listing.final_price_sar or listing.price,
+                },
+            )
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -1005,10 +1047,14 @@ class ListingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='submit', permission_classes=[IsAuthenticated])
     def submit(self, request, pk=None):
         """
-        POST /api/listings/{id}/submit/ — owner sends a draft for review.
+        POST /api/listings/{id}/submit/ — the owner sends a listing for review.
 
-        The only transition an owner may make themselves. Everything after
-        this belongs to a reviewer.
+        The only transition an owner may make themselves; everything after it
+        belongs to a reviewer. Reachable from `draft` (never submitted) and
+        from `changes_requested`/`rejected` (submitted, sent back, fixed).
+
+        No prior approval is required to reach this endpoint — approval is
+        what it asks for. It gates nothing but public visibility.
         """
         listing = self.get_object()
 
@@ -1018,26 +1064,35 @@ class ListingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        if listing.status != 'draft':
+        if listing.status not in SUBMITTABLE_STATUSES:
             return Response(
                 {
-                    'error': f"Only a draft can be submitted; this listing is '{listing.status}'.",
+                    'error': (
+                        f"This listing is '{listing.status}' and cannot be submitted. "
+                        f"Submittable states: {', '.join(sorted(SUBMITTABLE_STATUSES))}."
+                    ),
                     'status': listing.status,
                 },
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # A draft may sit priceless; a listing in the queue may not. This is
-        # the same rule the serializer applies to a non-draft payload.
-        if listing.final_price_sar is None and listing.price is None:
+        # A draft may sit half-filled; a listing in the queue may not. The
+        # whole set is reported at once — sending someone back five times for
+        # one field each is how a form gets abandoned.
+        missing = ListingSerializer.compute_missing_for_submit(listing)
+        if missing:
             return Response(
-                {'final_price_sar': 'This field is required.'},
+                {
+                    **{field: 'This field is required.' for field in missing},
+                    'missing_for_submit': missing,
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         listing.status = 'pending'
+        listing.submitted_at = timezone.now()
         try:
-            listing.save(update_fields=['status'])
+            listing.save(update_fields=['status', 'submitted_at'])
         except DjangoValidationError as exc:
             msgs = exc.message_dict if hasattr(exc, 'message_dict') else {'error': exc.messages}
             return Response(msgs, status=status.HTTP_400_BAD_REQUEST)
