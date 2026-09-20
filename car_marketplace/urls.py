@@ -14,6 +14,8 @@ urlpatterns = [
     path('api/', include('accounts.urls')),
     path('api/', include('cars.urls')),
     path('api/dashboard/', include('dashboard.urls')),
+    # The admin inspector: the whole internal record of one entity.
+    path('api/admin/inspect/', include('dashboard.inspector.urls')),
     path('api/', include('auditlog.urls')),
     path('api/favorites/', include('favorites.urls')),
     path('api/', include('leads.urls')),

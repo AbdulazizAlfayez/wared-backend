@@ -10,6 +10,13 @@ class AuditLog(models.Model):
         ('approve', 'Approve'),
         ('reject', 'Reject'),
         ('status_change', 'Status Change'),
+        # Written by cars.views.request_changes since that action shipped; it
+        # was missing here, so the row persisted (choices are not enforced at
+        # the database level) but `get_action_display()` had nothing to show.
+        ('request_changes', 'Request Changes'),
+        # An admin opening a record in the inspector. Reading a person's file
+        # is itself an event worth being able to account for.
+        ('view', 'View'),
         ('login', 'Login'),
         ('logout', 'Logout'),
         ('login_failed', 'Login Failed'),
@@ -32,6 +39,8 @@ class AuditLog(models.Model):
     old_value = models.JSONField(null=True, blank=True)
     new_value = models.JSONField(null=True, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
+    #: Device string, where the caller had one. Truncated by `log_action`.
+    user_agent = models.TextField(blank=True, default='')
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -40,6 +49,10 @@ class AuditLog(models.Model):
         indexes = [
             models.Index(fields=['timestamp']),
             models.Index(fields=['model_name']),
+            # The inspector's per-object trail. `model_name` alone is barely
+            # selective — most rows are listings — so the composite is what
+            # keeps "every event for this record" cheap.
+            models.Index(fields=['model_name', 'object_id', '-timestamp']),
         ]
 
     def __str__(self):
