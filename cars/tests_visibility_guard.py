@@ -35,7 +35,22 @@ SCANNED_MODULES = (
     'assistant/services.py',
     'dashboard/views.py',
     'dashboard/analytics.py',
+    # Modules that ACT on a listing by id. They are not feeds, but they take a
+    # listing id from the client and answer with listing fields — which is how
+    # an unapproved car stayed reservable long after the feeds were locked
+    # down. Their availability rules are their own; the moderation gate is not.
+    'orders/serializers.py',
+    'messaging/serializers.py',
+    'leads/serializers.py',
+    'moderation/serializers.py',
+    'bookings/serializers.py',
+    'reviews/views.py',
+    'accounts/serializers.py',
 )
+
+#: Calls that apply the rules. A query built with one of these is gated by
+#: construction — see `cars.models.ListingQuerySet`.
+GATE_CALLS = ('public_market_q', 'moderation_q', '.public(', '.moderated(')
 
 #: (module, qualified name) → why this query does not need public_market_q.
 ALLOWED = {
@@ -125,7 +140,7 @@ def find_unguarded():
             scope_src = (
                 ast.get_source_segment(source, enclosing) if enclosing else segment
             ) or ''
-            if 'public_market_q' in scope_src:
+            if any(gate in scope_src for gate in GATE_CALLS):
                 continue
             if (module, qualname) in ALLOWED:
                 continue

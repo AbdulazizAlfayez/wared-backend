@@ -394,7 +394,11 @@ class CreateOrderSerializer(serializers.Serializer):
 
     def validate_car_id(self, value):
         try:
-            car = Listing.objects.get(pk=value, is_active=True)
+            # Same moderation gate as the reservation path: an unapproved car
+            # is not orderable by id.
+            car = Listing.objects.moderated(
+                self.context['request'].user
+            ).get(pk=value, is_active=True)
         except Listing.DoesNotExist:
             raise serializers.ValidationError("Car not found or not available.")
         if car.import_status != 'available':
@@ -408,7 +412,7 @@ class CreateOrderSerializer(serializers.Serializer):
         request = self.context['request']
         car = getattr(self, '_car', None)
         if car is None:
-            car = Listing.objects.get(pk=data['car_id'])
+            car = Listing.objects.moderated(request.user).get(pk=data['car_id'])
         if car.owner_id == request.user.id:
             raise serializers.ValidationError("You cannot order your own listing.")
         existing = ImportOrder.objects.filter(
@@ -699,7 +703,15 @@ class CreateReservationSerializer(serializers.Serializer):
     def validate_car_id(self, value):
         from django.utils.translation import gettext as _
         try:
-            car = Listing.objects.get(pk=value, is_active=True)
+            # `.moderated()` is the moderation gate: a car the admin queue has
+            # not approved cannot be reserved, even by id, even though the
+            # lock checks below would happily let it through. It deliberately
+            # does NOT apply the reservation lock, so a car another buyer
+            # holds still reaches the 409 below rather than becoming
+            # "not found".
+            car = Listing.objects.moderated(
+                self.context['request'].user
+            ).get(pk=value, is_active=True)
         except Listing.DoesNotExist:
             raise serializers.ValidationError(_('Car not found or not available.'))
         self._car = car

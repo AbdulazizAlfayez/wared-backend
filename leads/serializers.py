@@ -45,7 +45,13 @@ class LeadCreateSerializer(serializers.ModelSerializer):
         fields = ('listing', 'message', 'phone', 'email', 'preferred_time', 'source')
 
     def validate_listing(self, listing):
+        from cars.models import Listing
+
         request = self.context['request']
+        # The moderation gate: a car the admin queue has not approved is not
+        # on the market, so it cannot take enquiries either.
+        if not Listing.objects.moderated(request.user).filter(pk=listing.pk).exists():
+            raise serializers.ValidationError("This listing is not available.")
         # Buyer cannot submit a lead on their own listing
         if listing.owner == request.user:
             raise serializers.ValidationError(
