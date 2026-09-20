@@ -167,7 +167,7 @@ def _notify_listing_status_change(instance, old_status: str, request_user) -> No
             title='تم رفض إعلانك / Your listing was rejected',
             message=f'إعلانك "{instance.title}" مرفوض. السبب: {reason}' if reason else f'إعلانك "{instance.title}" مرفوض.',
             listing=instance,
-            metadata={'rejection_reason': reason},
+            metadata={'listing_id': instance.pk, 'rejection_reason': reason},
         )
         _send_listing_email(instance.pk, 'rejected', reason)
 
@@ -179,7 +179,7 @@ def _notify_listing_status_change(instance, old_status: str, request_user) -> No
             title='مطلوب تعديل على إعلانك / Changes requested on your listing',
             message=f'يرجى تعديل إعلانك "{instance.title}". الملاحظة: {note}' if note else f'يرجى تعديل إعلانك "{instance.title}".',
             listing=instance,
-            metadata={'admin_notes': note},
+            metadata={'listing_id': instance.pk, 'admin_notes': note},
         )
         _send_listing_email(instance.pk, 'changes_requested', note)
 
