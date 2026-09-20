@@ -59,7 +59,12 @@ class ReportCreateSerializer(serializers.Serializer):
         if listing_id:
             from cars.models import Listing
             try:
-                listing = Listing.objects.select_related('owner').get(pk=listing_id)
+                # The moderation gate: you can only report a listing you can
+                # see. Staff are exempt, so the moderation queue itself is
+                # unaffected.
+                listing = Listing.objects.moderated(reporter).select_related('owner').get(
+                    pk=listing_id
+                )
             except Listing.DoesNotExist:
                 raise serializers.ValidationError({"listing_id": "Listing not found."})
             if listing.owner_id == reporter.id:

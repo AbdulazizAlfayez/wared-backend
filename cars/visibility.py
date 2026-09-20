@@ -59,6 +59,31 @@ def is_staff_user(user):
     )
 
 
+def moderation_q(user=None):
+    """
+    The moderation gate on its own: may this user be shown, or act on, this
+    listing at all?
+
+    `status='approved'` is what the admin queue controls. Staff see
+    everything; an owner sees their own listing whatever state it is in, so
+    they can preview and edit it before it is approved.
+
+    Deliberately says nothing about reservations. Endpoints that create
+    something against a car — a reservation, an order, a conversation, a lead,
+    a report — have their own availability rules and their own error codes for
+    a car someone else holds, and they must not lose those by borrowing the
+    market filter. They use this; feeds and grids use `public_market_q`,
+    which is this plus the lock.
+    """
+    if is_staff_user(user):
+        return Q()
+
+    q = Q(status='approved') & Q(is_active=True)
+    if user is None or not getattr(user, 'is_authenticated', False):
+        return q
+    return q | (Q(owner=user) & Q(is_active=True))
+
+
 def public_market_q(user=None, browse=False):
     """
     Q object selecting the listings *user* may see.
@@ -96,7 +121,14 @@ def public_market_q(user=None, browse=False):
     if user is None or not getattr(user, 'is_authenticated', False):
         return q
     if browse:
-        return q | (Q(owner=user) & Q(is_active=True) & unlocked)
+        # Browse is the public market, and an unapproved car is not on it —
+        # not even for the importer who submitted it. This used to add the
+        # caller's own listings whatever their moderation status, which put a
+        # pending car in the public grid, badged "Available" (the card reads
+        # import_status) with a Reserve link. Owners see their own drafts and
+        # pending cars on their own surfaces: `?mine=1` and
+        # `/api/listings/my/`.
+        return q
     return q | (
         (Q(owner=user) & Q(is_active=True))
         | Exists(Reservation.objects.filter(

@@ -237,11 +237,19 @@ class PublicProfileSerializer(serializers.ModelSerializer):
     def get_stats(self, obj):
         from cars.models import Listing
         from favorites.models import Favorite
-        listings = Listing.objects.filter(owner=obj, is_active=True)
+        # `total_listings` is what this seller has published — approved and
+        # live. `active_listings` is what a buyer could open right now, which
+        # excludes the ones a reservation or an order has taken off the
+        # market. Neither counts drafts, pending or rejected cars: an
+        # unfiltered `Listing.objects` told a stranger how much of this
+        # seller's stock was sitting in the moderation queue.
+        published = Listing.objects.moderated().filter(owner=obj)
         return {
-            'total_listings':     listings.count(),
-            'active_listings':    listings.filter(status='approved').count(),
-            'sold_count':         listings.filter(status='sold').count(),
+            'total_listings':     published.count(),
+            'active_listings':    Listing.objects.public().filter(owner=obj).count(),
+            'sold_count':         Listing.objects.filter(
+                                      owner=obj, is_active=True, status='sold',
+                                  ).count(),
             'favorites_received': Favorite.objects.filter(listing__owner=obj).count(),
         }
 

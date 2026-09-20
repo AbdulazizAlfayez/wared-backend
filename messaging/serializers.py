@@ -209,7 +209,13 @@ class StartConversationSerializer(serializers.Serializer):
         request = self.context['request']
 
         try:
-            listing = Listing.objects.select_related('owner').get(pk=attrs['car_id'])
+            # The moderation gate: you cannot open a conversation about a car
+            # the admin queue has not approved. Staff and the importer who
+            # owns it are exempt, and the lock is not applied — a buyer must
+            # still be able to message about the car they have reserved.
+            listing = Listing.objects.moderated(request.user).select_related('owner').get(
+                pk=attrs['car_id']
+            )
         except Listing.DoesNotExist:
             raise serializers.ValidationError({'car_id': 'السيارة غير موجودة.'})
 

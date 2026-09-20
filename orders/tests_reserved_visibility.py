@@ -548,10 +548,21 @@ class HomeGridRegressionTests(APITestCase):
         self.client.force_authenticate(user=self.other_buyer)
         self.assertEqual(self.client.get('/api/listings/').data['count'], 1)
 
-    def test_owner_still_sees_their_own_unlocked_draft_in_the_list(self):
-        draft = make_listing(self.importer, title='Draft', status='pending')
-        self.assertIn(draft.pk, self._list_ids(self.importer))
-        self.assertNotIn(draft.pk, self._list_ids(self.other_buyer))
+    def test_an_unapproved_listing_is_off_the_public_list_for_everyone(self):
+        """
+        Changed deliberately (moderation gate): browse is the public market,
+        and a car the admin has not approved is not on it — not even for the
+        importer who submitted it. This test previously asserted the opposite,
+        which is how a pending car reached the public grid badged "Available".
+        The importer's own surfaces still show it; see
+        cars/tests_moderation_gate.py.
+        """
+        pending = make_listing(self.importer, title='Draft', status='pending')
+        self.assertNotIn(pending.pk, self._list_ids(self.importer))
+        self.assertNotIn(pending.pk, self._list_ids(self.other_buyer))
+
+        self.client.force_authenticate(user=self.importer)
+        self.assertIn(pending.pk, _ids(self.client.get('/api/listings/?mine=1')))
 
 
 class MarketCacheInvalidationTests(APITestCase):

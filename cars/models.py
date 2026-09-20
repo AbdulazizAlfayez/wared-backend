@@ -568,8 +568,43 @@ _LISTING_VALID_TRANSITIONS = {
 }
 
 
+class ListingQuerySet(models.QuerySet):
+    """
+    The one place the visibility rules are applied.
+
+    `cars/visibility.py` holds the rules themselves; this puts them on the
+    manager so a view or serializer cannot accidentally read listings without
+    them. `cars/tests_visibility_guard.py` fails the build when a module that
+    serves or acts on listings queries `Listing.objects` without going
+    through one of these.
+    """
+
+    def public(self, user=None, browse=False):
+        """
+        Listings *user* may be shown: approved and on the market, plus what
+        their own relationship to a car earns them (their own listings, a car
+        they have reserved, a car in their active order). `browse=True` is the
+        stricter feed rule — the public market and nothing else.
+        """
+        from .visibility import public_market_q
+
+        return self.filter(public_market_q(user, browse=browse))
+
+    def moderated(self, user=None):
+        """
+        Listings *user* may act on: the moderation gate only, leaving each
+        endpoint's own availability rules (and their error codes) intact.
+        See `cars.visibility.moderation_q`.
+        """
+        from .visibility import moderation_q
+
+        return self.filter(moderation_q(user))
+
+
 class Listing(models.Model):
     """Listing model for /api/listings."""
+
+    objects = ListingQuerySet.as_manager()
 
     STATUS_CHOICES = [
         ('draft',              'Draft'),
