@@ -167,10 +167,14 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
     )
     # Filled in `to_representation` for the owner and admins only.
     owner_feedback = serializers.SerializerMethodField()
+    feedback_at = serializers.SerializerMethodField()
     missing_for_submit = serializers.SerializerMethodField()
 
     def get_owner_feedback(self, obj):
         return self._owner_feedback(obj)
+
+    def get_feedback_at(self, obj):
+        return self._feedback_at(obj)
 
     def get_missing_for_submit(self, obj):
         return self._missing_for_submit(obj)
@@ -239,8 +243,8 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'owner_id', 'owner', 'showroom', 'workshop',
             'is_active', 'approved_by', 'approved_at', 'created_at',
             # Status tracking (Phase 2.14)
-            'rejection_reason', 'admin_notes', 'owner_feedback', 'missing_for_submit',
-            'submitted_at', 'status_changed_at',
+            'rejection_reason', 'admin_notes', 'owner_feedback', 'feedback_at',
+            'missing_for_submit', 'submitted_at', 'status_changed_at',
             # View counters (Phase 2.13)
             'view_count', 'unique_view_count', 'view_stats',
             # Images
@@ -283,8 +287,8 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'make_display', 'model_display', 'description_display',
             'color_display', 'city_display', 'region_display',
             'view_count', 'unique_view_count', 'view_stats',
-            'rejection_reason', 'admin_notes', 'owner_feedback', 'missing_for_submit',
-            'submitted_at', 'status_changed_at',
+            'rejection_reason', 'admin_notes', 'owner_feedback', 'feedback_at',
+            'missing_for_submit', 'submitted_at', 'status_changed_at',
             'is_featured', 'is_highlighted', 'is_top_search', 'is_homepage',
             'promotion_priority', 'is_promoted', 'active_promotion',
             'owner_verified', 'owner_verification_level',
@@ -439,9 +443,14 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
         # but never what to change.
         if is_owner or is_admin:
             data['owner_feedback'] = self._owner_feedback(instance)
+            data['feedback_at'] = self._feedback_at(instance)
             data['missing_for_submit'] = self._missing_for_submit(instance)
         else:
+            # Gated exactly as `owner_feedback` is. A timestamp is a small
+            # leak but it is still one: it tells an anonymous caller that a
+            # reviewer acted, and when.
             data.pop('owner_feedback', None)
+            data.pop('feedback_at', None)
             data.pop('missing_for_submit', None)
 
         return data
@@ -467,6 +476,19 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
     def _missing_for_submit(self, instance):
         """Owner-facing only; a buyer has no business knowing."""
         return self.compute_missing_for_submit(instance)
+
+    def _feedback_at(self, instance):
+        """
+        When the reviewer wrote the note, or None when there is no note.
+
+        `status_changed_at` is the moment: `request-changes` and `reject` both
+        stamp it in the same save that writes the note. A separate column
+        would be a second source of truth for one fact.
+        """
+        if self._owner_feedback(instance) is None:
+            return None
+        stamped = getattr(instance, 'status_changed_at', None)
+        return stamped.isoformat() if stamped else None
 
     def _owner_feedback(self, instance):
         """What the reviewer asked for, or None when nothing is outstanding."""
