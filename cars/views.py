@@ -1,4 +1,5 @@
 import cloudinary.uploader
+from cloudinary.exceptions import Error as CloudinaryError
 from datetime import timedelta
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -188,6 +189,11 @@ def _notify_listing_status_change(instance, old_status: str, request_user) -> No
 #: requires the listing or its owner to have been approved before — approval
 #: is what submitting asks for.
 SUBMITTABLE_STATUSES = frozenset({'draft', 'changes_requested', 'rejected'})
+
+#: Cloudinary's own hard limit. Checked here so an oversized photo is refused
+#: in milliseconds with a readable message, rather than after a round trip
+#: that ends in an exception.
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 def _notify_admins_new_listing(listing):
@@ -2298,8 +2304,40 @@ class ListingImageViewSet(APIView):
         if 'image' not in request.FILES:
             return Response({'error': 'Image file is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Upload to Cloudinary
-        result = cloudinary.uploader.upload(request.FILES['image'], folder='listings/')
+        upload = request.FILES['image']
+
+        # Cloudinary refuses anything over 10 MB, and refuses it by raising —
+        # which reached the client as a 500 with an HTML body. The mobile
+        # client discards HTML bodies on purpose, so a photo that was simply
+        # too big arrived as "something went wrong" with nothing to act on.
+        if upload.size > MAX_IMAGE_BYTES:
+            return Response(
+                {
+                    'error': (
+                        f'This photo is {upload.size // 1_048_576} MB. '
+                        f'The limit is {MAX_IMAGE_BYTES // 1_048_576} MB — '
+                        f'please choose a smaller one.'
+                    ),
+                    'code': 'image_too_large',
+                    'size': upload.size,
+                    'max_size': MAX_IMAGE_BYTES,
+                },
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+
+        # Upload to Cloudinary.
+        #
+        # Synchronous on purpose: the row cannot be written until Cloudinary
+        # returns a public id, and a background job would mean a listing whose
+        # photos appear minutes later. It takes 2-5s per photo from here, so
+        # the client uploads them after the listing is saved, not before.
+        try:
+            result = cloudinary.uploader.upload(upload, folder='listings/')
+        except CloudinaryError as exc:
+            return Response(
+                {'error': str(exc), 'code': 'upload_failed'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
         # Auto-assign order: max existing order + 1 (0 if first image)
         max_order = ListingImage.objects.filter(listing=listing).aggregate(m=Max('order'))['m']
