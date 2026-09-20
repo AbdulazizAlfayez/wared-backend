@@ -880,10 +880,18 @@ class ListingViewSet(viewsets.ModelViewSet):
             )
         old_values = _listing_snapshot(instance)
 
-        # SECURITY: importers can only change import_status on approved listings
+        # SECURITY: importers can only CHANGE import_status on approved
+        # listings.
+        #
+        # An actual change, not the mere presence of the field. A form posts
+        # every value it holds, so sending `available` back unchanged — which
+        # is what the model defaults to on create — was failing the whole
+        # request, and with it every other edit in the same payload. The rule
+        # is about availability moving, not about the word appearing.
         if (request.user.role != 'admin'
                 and 'import_status' in request.data
-                and instance.status != 'approved'):
+                and instance.status != 'approved'
+                and str(request.data.get('import_status') or '') != str(instance.import_status or '')):
             return Response(
                 {'error': 'Import status can only be updated on approved listings.'},
                 status=status.HTTP_403_FORBIDDEN,
