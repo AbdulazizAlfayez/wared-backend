@@ -30,6 +30,13 @@ User = get_user_model()
 #: 2026-09-20, before the inspector existed. The inspector reads fields no
 #: buyer may see; if one of them ever appears here, something widened the
 #: public serializer and this test is the tripwire.
+#:
+#: Changed deliberately once, on 2026-09-24: `is_owner` was added to the
+#: listing serializers so a client can draw its own cars as "yours" without
+#: comparing owner_id itself. It is per-viewer but it is not private — it tells
+#: you only about yourself, is False for everyone anonymous, and costs no
+#: query. It is in this set because it was a decision, not a leak. Anything
+#: else that turns up here still needs explaining.
 PUBLIC_LISTING_FIELDS = frozenset({
     'accident_description', 'accident_history', 'active_promotion',
     'actual_arrival_date', 'approved_at', 'approved_by', 'auction_lot_number',
@@ -46,7 +53,8 @@ PUBLIC_LISTING_FIELDS = frozenset({
     'has_frame_damage', 'has_salvage_title', 'horsepower', 'id', 'images',
     'import_status', 'imported_from', 'inspection_fee', 'is_active',
     'is_favorited_by_me', 'is_featured', 'is_highlighted', 'is_homepage',
-    'is_liked', 'is_promoted', 'is_reserved', 'is_top_search', 'latitude',
+    'is_liked', 'is_owner', 'is_promoted', 'is_reserved', 'is_top_search',
+    'latitude',
     'like_count', 'longitude', 'make', 'make_ar', 'make_display', 'mileage',
     'model', 'model_ar', 'model_display', 'negotiable', 'odometer_verified',
     'original_listing_url', 'owner', 'owner_id', 'owner_verification_level',
