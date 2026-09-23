@@ -213,7 +213,19 @@ class ReservationDuplicateGuardTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
 
     def test_cannot_reserve_your_own_listing(self):
+        # An importer is refused before the owner check is even reached — no
+        # importer account may reserve (feat/importer-pov). The serializer's
+        # "your own listing" rule stays as the safety net for any other
+        # account that somehow owns a car.
         resp = self._create(self.importer)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data['code'], 'importer_cannot_reserve')
+
+    def test_a_non_importer_owner_is_still_refused_their_own_car(self):
+        owner = make_buyer(email='selfowner@test.com', name='Self Owner')
+        car = make_listing(owner, title='Self owned')
+        self.client.force_authenticate(user=owner)
+        resp = self.client.post(self.url, {'car_id': car.pk}, format='json')
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
 

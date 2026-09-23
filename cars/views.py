@@ -263,7 +263,10 @@ def _track_view(request, listing) -> None:
 
     Rules:
     - Owner views of their own listing are ignored.
-    - At most one view per (user OR IP) per listing per calendar day.
+    - At most one view per (user OR IP) per listing per HOUR. A calendar day
+      was too coarse for a number the importer watches: someone who opens a
+      car in the morning and comes back after lunch is two pieces of
+      interest, and a day-long window hid the second.
     - unique_view_count is incremented only on the viewer's very first visit.
     - Uses F() expressions for atomic, race-condition-free counter updates.
     """
@@ -279,25 +282,19 @@ def _track_view(request, listing) -> None:
     if source not in _VALID_SOURCES:
         source = 'direct'
 
-    today = timezone.now().date()
+    since = timezone.now() - timedelta(hours=1)
 
     if user:
-        already_today = ViewLog.objects.filter(
-            listing=listing, user=user, viewed_at__date=today,
-        ).exists()
-        is_first_ever = not ViewLog.objects.filter(
-            listing=listing, user=user,
-        ).exists()
+        seen = ViewLog.objects.filter(listing=listing, user=user)
     else:
-        already_today = ViewLog.objects.filter(
-            listing=listing, user__isnull=True, ip_address=ip, viewed_at__date=today,
-        ).exists()
-        is_first_ever = not ViewLog.objects.filter(
+        seen = ViewLog.objects.filter(
             listing=listing, user__isnull=True, ip_address=ip,
-        ).exists()
+        )
+    already_recently = seen.filter(viewed_at__gte=since).exists()
+    is_first_ever = not seen.exists()
 
-    if already_today:
-        return  # Already recorded a view for today — skip
+    if already_recently:
+        return  # Counted within the last hour — skip
 
     ViewLog.objects.create(
         listing=listing,

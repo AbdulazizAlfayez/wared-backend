@@ -450,3 +450,23 @@ class MyPayoutsView(APIView):
                 'net': float(net_total),
             },
         })
+
+
+class MyDeskView(APIView):
+    """
+    GET /api/importers/me/desk/ — the importer Home screen in one call.
+
+    See `importers/desk.py` for what goes in it and why it is ordered the way
+    it is.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if getattr(user, 'role', '') not in ('importer', 'admin') and not user.is_staff:
+            return Response({'detail': 'Importer access only.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        from .desk import build_desk
+
+        return Response(build_desk(user, request=request))

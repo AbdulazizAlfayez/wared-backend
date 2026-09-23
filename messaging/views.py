@@ -105,6 +105,47 @@ class ConversationViewSet(
             qs = (buyer_qs | seller_qs).distinct()
         return qs.order_by('-last_message_at', '-updated_at')
 
+    def list(self, request, *args, **kwargs):
+        """
+        GET /api/conversations/           — flat, newest activity first.
+        GET /api/conversations/?group=listing — the same threads, gathered
+        under the car they are about.
+
+        An importer with eight cars has eight inboxes, not one: the question
+        "who is asking about the Camry" is the one they actually have. Buyers
+        can group too — it costs nothing and a buyer watching three cars reads
+        the same way.
+        """
+        if request.query_params.get('group') != 'listing':
+            return super().list(request, *args, **kwargs)
+
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+
+        groups = {}
+        order = []
+        for conversation, row in zip(queryset, serializer.data):
+            listing_id = conversation.listing_id
+            if listing_id not in groups:
+                groups[listing_id] = {
+                    'listing': row.get('listing'),
+                    'conversations': [],
+                    'unread_total': 0,
+                    'unanswered_total': 0,
+                }
+                order.append(listing_id)
+            group = groups[listing_id]
+            group['conversations'].append(row)
+            group['unread_total'] += row.get('unread_count') or 0
+            group['unanswered_total'] += 1 if row.get('unanswered_by_me') else 0
+
+        # The queryset is already newest-activity-first, so the first thread
+        # seen for a car fixes that car's place in the list.
+        return Response({
+            'count': len(order),
+            'groups': [groups[listing_id] for listing_id in order],
+        })
+
     # -- Create ----------------------------------------------------------------
     #
     # Deliberately NOT gated on a reservation: a buyer may message an importer
