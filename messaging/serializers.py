@@ -149,6 +149,12 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'name':        other.name,
             'avatar_url':  avatar_url,
             'is_verified': is_verified,
+            # Whose profile the header opens. A buyer tapping the header wants
+            # the importer's public profile; an importer tapping it wants the
+            # buyer's. `role` says which, so the client picks the right screen
+            # without inferring it from its own identity.
+            'profile_url_id': other.pk,
+            'role': getattr(other, 'role', '') or 'user',
         }
 
     def get_last_message(self, obj):

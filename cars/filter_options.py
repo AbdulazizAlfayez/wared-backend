@@ -31,11 +31,17 @@ from source_countries.models import SourceCountry
 from .models import Listing
 from .visibility import public_market_q
 
-CACHE_KEY = 'listings:filter_options:v1'
+# Bumped to v2 when `mileage` was added: a client that expects the new key
+# would otherwise read a cached v1 payload without it for up to CACHE_TTL.
+CACHE_KEY = 'listings:filter_options:v2'
 CACHE_TTL = 300  # 5 minutes
 
 #: The slider's granularity. A constant, not derived from the data.
 PRICE_STEP = 5000
+
+#: Mileage moves in 5,000 km notches. Deriving a step from the data would make
+#: the handle behave differently on every visit.
+MILEAGE_STEP = 5000
 
 
 def _counted(qs, field):
@@ -150,6 +156,20 @@ def _source_countries_facet(qs):
     return out
 
 
+def _ceil_to_step(value, step, *, fallback=150_000):
+    """
+    Round up to the next whole step.
+
+    `fallback` is what an empty market reports: a slider still has to have a
+    right-hand end, and 150,000 km is the round number the labels were written
+    against.
+    """
+    if value is None:
+        return fallback
+    notches = -(-int(value) // step)  # ceiling division
+    return max(step, notches * step)
+
+
 def compute_filter_options():
     """The uncached payload. Public listings only — see `cars.visibility`."""
     qs = Listing.objects.filter(public_market_q()).distinct()
@@ -162,6 +182,7 @@ def compute_filter_options():
         final_max=Max('final_price_sar'),
         year_min=Min('year'),
         year_max=Max('year'),
+        mileage_max=Max('mileage'),
     )
 
     return {
@@ -190,6 +211,16 @@ def compute_filter_options():
             'max': _number(bounds['final_max']),
         },
         'year': {'min': bounds['year_min'], 'max': bounds['year_max']},
+        # Mileage always starts at zero — a brand-new import is the bottom of
+        # the range whether or not one is listed today, and a slider whose
+        # left edge wandered between visits would be unusable. Only the top
+        # comes from the data, rounded UP to a whole step so the highest car on
+        # the market is inside the track rather than sitting on its edge.
+        'mileage': {
+            'min': 0,
+            'max': _ceil_to_step(bounds['mileage_max'], MILEAGE_STEP),
+            'step': MILEAGE_STEP,
+        },
     }
 
 

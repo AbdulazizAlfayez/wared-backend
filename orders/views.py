@@ -13,6 +13,8 @@ from .serializers import (
     CreateTimelineEventSerializer,
     ImportOrderDetailSerializer,
     ImportOrderListSerializer,
+    SHIPMENT_NUMBER_REQUIRED,
+    shipment_number_missing,
     UpdateOrderStatusSerializer,
     UploadDocumentSerializer,
     OrderDocumentSerializer,
@@ -22,6 +24,17 @@ from .serializers import (
 # ---------------------------------------------------------------------------
 # Map status → (event_type, default_title)
 # ---------------------------------------------------------------------------
+def shipped_timeline_title(order):
+    """
+    "Shipped · Maersk ABC123", or "Shipped · ABC123" when no carrier was given.
+
+    One place, because the timeline row and anything that re-reads it must
+    agree on the wording.
+    """
+    trailer = ' '.join(part for part in (order.carrier, order.shipment_number) if part)
+    return f'Shipped · {trailer}' if trailer else 'Car has been shipped'
+
+
 STATUS_TO_EVENT = {
     'deposit_requested':  ('deposit_requested',   'Deposit requested by importer'),
     'deposit_paid':       ('deposit_paid',         'Deposit payment confirmed'),
@@ -218,6 +231,9 @@ class OrderUpdateStatusView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        if shipment_number_missing(order, data):
+            return Response(SHIPMENT_NUMBER_REQUIRED, status=status.HTTP_400_BAD_REQUEST)
+
         # Apply status change
         order.status = new_status
         if data.get('estimated_delivery_date'):
@@ -229,17 +245,34 @@ class OrderUpdateStatusView(APIView):
         if new_status == 'deposit_paid':
             order.deposit_paid    = True
             order.deposit_paid_at = timezone.now()
+        # Shipment details, whenever they are sent. Accepted on any status so
+        # an importer can correct a mistyped number later without rewinding
+        # the order; the requirement to HAVE one is enforced on 'shipped' by
+        # UpdateOrderStatusSerializer.
+        if (data.get('shipment_number') or '').strip():
+            order.shipment_number = data['shipment_number'].strip()
+        if (data.get('carrier') or '').strip():
+            order.carrier = data['carrier'].strip()
         order.save()
 
         # Auto-create timeline event
         event_info = STATUS_TO_EVENT.get(new_status)
         if event_info:
             event_type, default_title = event_info
+            title = data.get('notes') or default_title
+            description = data.get('notes', '')
+            if new_status == 'shipped' and order.shipment_number:
+                # The number belongs in the title: `orders/signals.py` turns a
+                # public timeline row into a buyer notification whose message
+                # is the title alone, so anything in `description` never
+                # reaches them.
+                title = shipped_timeline_title(order)
+                description = f'Shipment number {order.shipment_number}'
             ImportTimeline.objects.create(
                 order=order,
                 event_type=event_type,
-                title=data.get('notes') or default_title,
-                description=data.get('notes', ''),
+                title=title,
+                description=description,
                 date=timezone.now(),
                 created_by=user,
                 is_public=True,
@@ -251,11 +284,24 @@ class OrderUpdateStatusView(APIView):
         # Notify buyer
         try:
             from notifications.utils import notify, notify_admins
+            message = f'Your order status is now: {order.get_status_display()}'
+            metadata = None
+            if new_status == 'shipped' and order.shipment_number:
+                message = (
+                    f'{message} Shipment number {order.shipment_number}'
+                    + (f' with {order.carrier}.' if order.carrier else '.')
+                )
+                metadata = {
+                    'shipment_number': order.shipment_number,
+                    'carrier': order.carrier,
+                    'order_id': order.pk,
+                }
             notify(
                 recipient=order.buyer,
                 notification_type='system',
                 title=f'Order {order.order_number} Updated',
-                message=f'Your order status is now: {order.get_status_display()}',
+                message=message,
+                metadata=metadata,
             )
             # Admins must know when a deal is cancelled/refunded
             if new_status in ('cancelled', 'refunded') and getattr(user, 'role', '') != 'admin':

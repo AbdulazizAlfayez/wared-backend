@@ -615,7 +615,7 @@ MILESTONE_CONFIG = {
         'subject': 'Your car is shipping · {vessel_name} departed {port_of_origin}',
         'headline': 'Your car is on the water.',
         'intro': 'The {vessel_name} departed {port_of_origin} today carrying your {year} {make} {model}. Expected arrival at {port_of_entry} is {eta_range}.',
-        'detail_keys': [('Vessel', 'vessel_name', False), ('Shipping line', 'shipping_line', False), ('Container', 'container_number', True), ('Bill of lading', 'bill_of_lading_number', True), ('Departed', 'event_date', False), ('Arriving', 'eta_range', False)],
+        'detail_keys': [('Shipment number', 'shipment_number', True), ('Carrier', 'carrier', True), ('Vessel', 'vessel_name', False), ('Shipping line', 'shipping_line', False), ('Container', 'container_number', True), ('Bill of lading', 'bill_of_lading_number', True), ('Departed', 'event_date', False), ('Arriving', 'eta_range', False)],
         'cta_label': 'Track vessel in real time →',
         'caption': "We'll email you the moment your car arrives at {port_of_entry}.",
     },
@@ -687,13 +687,18 @@ def send_order_status_update_email(order_id, milestone_key):
 
     # Build detail rows
     detail_values = {
+        # The shipment lives on the ORDER, unlike everything else here, which
+        # describes the car. An order shipped before these fields existed has
+        # neither, and the blank rows are filtered out below.
+        'shipment_number': order.shipment_number or '',
+        'carrier': order.carrier or '',
         'auction_source': getattr(car, 'auction_source', '') or '',
         'auction_lot_number': getattr(car, 'auction_lot_number', '') or '',
         'car_price_display': f"SAR {car.price}" if car else '',
         'event_date': timezone.now().strftime('%d %b %Y'),
         'vin': getattr(car, 'vin', '') or '',
         'vessel_name': getattr(car, 'vessel_name', '') or '',
-        'shipping_line': getattr(car, 'shipping_line', '') or '',
+        'shipping_line': order.carrier or getattr(car, 'shipping_line', '') or '',
         'container_number': getattr(car, 'container_number', '') or '',
         'bill_of_lading_number': getattr(car, 'bill_of_lading_number', '') or '',
         'eta_range': fmt['eta_range'],
@@ -706,7 +711,14 @@ def send_order_status_update_email(order_id, milestone_key):
         'inspection_center': 'SASO',
         'inspection_result': 'Passed',
     }
-    detail_rows = [{'label': label, 'value': detail_values.get(key, ''), 'mono': mono} for label, key, mono in config['detail_keys']]
+    # Blank rows are dropped: the template prints every row it is given, and a
+    # "Shipment number" label with nothing beside it reads as a mistake on the
+    # platform's part rather than an absent fact.
+    detail_rows = [
+        {'label': label, 'value': detail_values.get(key, ''), 'mono': mono}
+        for label, key, mono in config['detail_keys']
+        if str(detail_values.get(key, '') or '').strip()
+    ]
 
     # Build progress steps
     step_order = [s[0] for s in _PROGRESS_STEPS]

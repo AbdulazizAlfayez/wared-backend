@@ -122,6 +122,19 @@ class ImportOrder(models.Model):
     actual_delivery_date    = models.DateField(null=True, blank=True)
 
     # -----------------------------------------------------------------------
+    # Shipment
+    # -----------------------------------------------------------------------
+    #: What the buyer types into the carrier's website. Blank until the car
+    #: ships — `update-status` refuses to set 'shipped' without it — and kept
+    #: blank-allowed at the model level so an order that never ships, or one a
+    #: staff member forces past the gate, is still a valid row.
+    shipment_number = models.CharField(max_length=60, blank=True, default='')
+    #: Who is carrying it. Optional: plenty of shipments arrive with a number
+    #: and no name worth recording. `Listing.shipping_line` is the same idea
+    #: one level up, describing the route rather than this consignment.
+    carrier         = models.CharField(max_length=60, blank=True, default='')
+
+    # -----------------------------------------------------------------------
     # Notes & cancellation
     # -----------------------------------------------------------------------
     buyer_notes         = models.TextField(blank=True, default='')

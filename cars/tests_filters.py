@@ -6,6 +6,7 @@ at the same Redis the running server uses. These tests override CACHES rather
 than calling `cache.clear()`, which would flush that shared instance.
 """
 
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -218,7 +219,7 @@ class FilterOptionsTests(TestCase):
         for key in (
             'makes', 'cities', 'source_countries', 'imported_from', 'condition',
             'body_type', 'transmission', 'fuel_type', 'drive_type',
-            'import_status', 'price', 'year',
+            'import_status', 'price', 'year', 'mileage',
         ):
             self.assertIn(key, response.data)
 
@@ -403,3 +404,92 @@ class LegacyFilterOptionsTests(TestCase):
         data = self.client.get(LEGACY_OPTIONS_URL).data
         self.assertEqual(data['makes'], ['Nissan', 'Toyota'])
         self.assertEqual(data['body_types'], ['sedan', 'suv'])
+
+
+@override_settings(CACHES=LOCAL_CACHE)
+class MileageFacetTests(TestCase):
+    """
+    The mileage block the range slider is driven by.
+
+    The facets are cached, and the cache outlives a test's transaction — so
+    each test clears the isolated locmem first, or it reads the bound computed
+    from the previous test's listings.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = make_user('mileage-facet@test.sa')
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+    def test_it_starts_at_zero_and_carries_a_step(self):
+        make_listing(self.owner, mileage=12_000)
+        block = self.client.get(OPTIONS_URL).data['mileage']
+        self.assertEqual(block['min'], 0)
+        self.assertEqual(block['step'], 5000)
+
+    def test_the_top_is_rounded_up_to_a_whole_step(self):
+        """
+        The highest car must sit inside the track. 41,000 km rounds to 45,000,
+        not 40,000, or the slider cannot reach the car.
+        """
+        make_listing(self.owner, mileage=41_000)
+        self.assertEqual(self.client.get(OPTIONS_URL).data['mileage']['max'], 45_000)
+
+    def test_an_exact_multiple_is_left_alone(self):
+        make_listing(self.owner, mileage=40_000)
+        self.assertEqual(self.client.get(OPTIONS_URL).data['mileage']['max'], 40_000)
+
+    def test_an_empty_market_still_has_a_right_hand_end(self):
+        block = self.client.get(OPTIONS_URL).data['mileage']
+        self.assertEqual(block['min'], 0)
+        self.assertEqual(block['max'], 150_000)
+
+    def test_a_car_with_no_mileage_does_not_collapse_the_range(self):
+        make_listing(self.owner, mileage=None)
+        make_listing(self.owner, mileage=22_000)
+        self.assertEqual(self.client.get(OPTIONS_URL).data['mileage']['max'], 25_000)
+
+    def test_only_public_cars_set_the_bound(self):
+        """A pending car's odometer is not market information."""
+        make_listing(self.owner, mileage=10_000)
+        make_listing(self.owner, mileage=400_000, status='pending')
+        self.assertEqual(self.client.get(OPTIONS_URL).data['mileage']['max'], 10_000)
+
+
+@override_settings(CACHES=LOCAL_CACHE)
+class MileageFilterTests(TestCase):
+    """`mileage_min` / `mileage_max` on the listing list."""
+
+    @classmethod
+    def setUpTestData(cls):
+        owner = make_user('mileage-filter@test.sa')
+        cls.low = make_listing(owner, mileage=5_000)
+        cls.mid = make_listing(owner, mileage=50_000)
+        cls.high = make_listing(owner, mileage=150_000)
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+    def test_min_only(self):
+        response = self.client.get(LIST_URL, {'mileage_min': 40_000})
+        self.assertEqual(ids(response), {self.mid.id, self.high.id})
+
+    def test_max_only(self):
+        response = self.client.get(LIST_URL, {'mileage_max': 40_000})
+        self.assertEqual(ids(response), {self.low.id})
+
+    def test_both_ends_are_inclusive(self):
+        response = self.client.get(LIST_URL, {'mileage_min': 5_000, 'mileage_max': 50_000})
+        self.assertEqual(ids(response), {self.low.id, self.mid.id})
+
+    def test_the_full_range_filters_nothing_out(self):
+        """What the slider sends at rest must return the whole market."""
+        block = self.client.get(OPTIONS_URL).data['mileage']
+        response = self.client.get(
+            LIST_URL, {'mileage_min': block['min'], 'mileage_max': block['max']},
+        )
+        self.assertEqual(ids(response), {self.low.id, self.mid.id, self.high.id})

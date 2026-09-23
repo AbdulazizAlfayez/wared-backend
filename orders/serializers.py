@@ -141,6 +141,7 @@ class ImportOrderListSerializer(serializers.ModelSerializer):
             'total_price', 'payment_status',
             'balance_due_sar', 'can_exchange_contacts', 'allowed_next_statuses',
             'estimated_delivery_date', 'actual_delivery_date',
+            'shipment_number', 'carrier',
             'notes', 'can_cancel',
             'latest_event', 'created_at', 'updated_at',
         ]
@@ -329,8 +330,12 @@ class ImportOrderDetailSerializer(ImportOrderListSerializer):
             return None
         info: dict = {
             'id':   obj.buyer.id,
+            'profile_url_id': obj.buyer.id,
             'name': obj.buyer.name,
-            'city': getattr(obj.buyer, 'city_name', None) or '',
+            # `city_name` is a serializer method elsewhere, never an attribute
+            # on User, so this read always returned '' — the city_obj relation
+            # is where the name actually lives.
+            'city': obj.buyer.city_obj.name_en if obj.buyer.city_obj_id else '',
         }
         # Contact-exchange policy: the importer sees the buyer's phone/email
         # ONLY after the full balance payment is confirmed (or for staff).
@@ -475,11 +480,43 @@ def default_cancellation_reason(user) -> str:
     return f'Cancelled by {label}'
 
 
+#: 400 body for shipping a car without saying how it can be followed.
+#:
+#: Hand-built rather than raised as a DRF field error, because DRF wraps every
+#: value in a ValidationError dict in a list — `code` would arrive as
+#: `['shipment_number_required']`. The `shipment_number` key is kept in the
+#: familiar field-error shape so a form can still map the message to its input,
+#: and the flat `detail` / `detail_ar` match IMPORTER_CANNOT_RESERVE and the
+#: 409 payment gate.
+SHIPMENT_NUMBER_REQUIRED = {
+    'code': 'shipment_number_required',
+    'detail': 'Shipment number is required when marking as shipped.',
+    'detail_ar': 'رقم الشحنة مطلوب عند تحديد الحالة كمشحونة.',
+    'shipment_number': ['Shipment number is required when marking as shipped.'],
+}
+
+
+def shipment_number_missing(order, data):
+    """True when this status change would ship a car nobody could follow."""
+    if data.get('status') != 'shipped' or data.get('_forced'):
+        return False
+    supplied = (data.get('shipment_number') or '').strip()
+    return not supplied and not (order.shipment_number or '').strip()
+
+
 class UpdateOrderStatusSerializer(serializers.Serializer):
     status                  = serializers.ChoiceField(choices=ImportOrder.STATUS_CHOICES)
     notes                   = serializers.CharField(required=False, allow_blank=True, default='')
     cancellation_reason     = serializers.CharField(required=False, allow_blank=True, default='')
     estimated_delivery_date = serializers.DateField(required=False, allow_null=True)
+    #: Required on the one edge that sets 'shipped'. Not `required=True` on the
+    #: field, because every other status change would then have to send it.
+    shipment_number         = serializers.CharField(
+        required=False, allow_blank=True, default='', max_length=60,
+    )
+    carrier                 = serializers.CharField(
+        required=False, allow_blank=True, default='', max_length=60,
+    )
     # Staff-only escape hatch for correcting a stuck order.
     force                   = serializers.BooleanField(required=False, default=False)
 
@@ -547,7 +584,17 @@ def person_brief(user):
     parts = [part for part in (user.name or '').split() if part]
     first = parts[0] if parts else (user.email or '').split('@')[0]
     initials = ''.join(part[0] for part in parts[:2]).upper() or first[:1].upper()
-    return {'id': user.id, 'first_name': first, 'initials': initials}
+    return {
+        'id': user.id,
+        'first_name': first,
+        'initials': initials,
+        # What to open when this row is tapped. Same value as `id`; named for
+        # what a client does with it, so nobody has to know which profile
+        # endpoint takes a user id and which takes a profile id — the importer
+        # profile at /api/importers/{pk}/ takes the PROFILE id, and guessing
+        # wrong is a 404.
+        'profile_url_id': user.id,
+    }
 
 
 class ReservationCarSerializer(serializers.ModelSerializer):
@@ -684,6 +731,7 @@ class ReservationDetailSerializer(ReservationListSerializer):
         # Same policy: no buyer email/phone before full payment.
         return {
             'id':    obj.buyer.id,
+            'profile_url_id': obj.buyer.id,
             'name':  obj.buyer.name,
         }
 

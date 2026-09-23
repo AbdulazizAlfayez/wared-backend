@@ -52,6 +52,8 @@ class ReservationPayloadTests(APITestCase):
         self.assertEqual(row['importer_id'], self.importer.pk)
         self.assertEqual(row['buyer'], {
             'id': self.buyer.pk, 'first_name': 'Fahad', 'initials': 'FA',
+            # What tapping the row opens — see accounts.BuyerPublicProfileView.
+            'profile_url_id': self.buyer.pk,
         })
         self.assertEqual(row['buyer_notes'], 'Can you send the Carfax?')
         self.assertEqual(row['car']['id'], self.car.pk)
@@ -101,6 +103,7 @@ class ReservationPayloadTests(APITestCase):
         row = next(r for r in rows if r['id'] == res.pk)
         self.assertEqual(row['buyer'], {
             'id': solo.pk, 'first_name': 'Noura', 'initials': 'N',
+            'profile_url_id': solo.pk,
         })
 
 
