@@ -25,7 +25,8 @@ class AuditLogFilter(django_filters.FilterSet):
 
     class Meta:
         model = AuditLog
-        fields = ['action', 'model_name', 'user']
+        # `object_id`: the per-object trail the admin inspector reads.
+        fields = ['action', 'model_name', 'object_id', 'user']
 
 
 @extend_schema(tags=['Audit Log'])
