@@ -108,13 +108,19 @@ class ConversationListSerializer(serializers.ModelSerializer):
     can_exchange_contacts = serializers.SerializerMethodField()
     deal         = serializers.SerializerMethodField()
     my_role      = serializers.SerializerMethodField()
+    # The ball is in my court: the last thing said came from the other party.
+    # Distinct from `unread_count`, which goes to zero the moment the thread
+    # is opened — a message read and not answered is still owed a reply, and
+    # that is the one an importer's inbox has to keep showing.
+    unanswered_by_me = serializers.SerializerMethodField()
 
     class Meta:
         model  = Conversation
         fields = (
             'id', 'listing', 'other_party', 'last_message',
             'last_message_preview', 'last_message_at',
-            'unread_count', 'is_active', 'created_at', 'updated_at',
+            'unread_count', 'unanswered_by_me',
+            'is_active', 'created_at', 'updated_at',
             'can_exchange_contacts', 'deal', 'my_role',
         )
         read_only_fields = fields
@@ -170,6 +176,16 @@ class ConversationListSerializer(serializers.ModelSerializer):
         if me is None:
             return None
         return 'buyer' if obj.buyer_id == me.pk else 'seller'
+
+    def get_unanswered_by_me(self, obj):
+        me = self._requester()
+        if me is None:
+            return False
+        last = obj.messages.order_by('-created_at').first()
+        if last is None or last.is_system:
+            # A system note ("this car was reserved") is not a question.
+            return False
+        return last.sender_id != me.pk
 
     def get_unread_count(self, obj):
         me = self._requester()

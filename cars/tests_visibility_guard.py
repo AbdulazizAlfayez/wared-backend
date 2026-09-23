@@ -29,6 +29,7 @@ SCANNED_MODULES = (
     'source_countries/views.py',
     'importers/views.py',
     'importers/serializers.py',
+    'importers/desk.py',
     'favorites/views.py',
     'social/visibility.py',
     'social/views.py',
@@ -54,6 +55,12 @@ GATE_CALLS = ('public_market_q', 'moderation_q', '.public(', '.moderated(')
 
 #: (module, qualified name) → why this query does not need public_market_q.
 ALLOWED = {
+    ('importers/desk.py', '_counts'):
+        "The importer's own listings, counted for their own Home screen.",
+    ('importers/desk.py', '_changes_requested'):
+        "The importer's own listings that a reviewer sent back.",
+    ('importers/desk.py', 'build_desk'):
+        "The importer's own six most recent listings, owner-scoped.",
     ('cars/views.py', '_track_view'):
         'View counter, updates by pk. Returns no listing data.',
     ('cars/views.py', 'ListingViewSet'):

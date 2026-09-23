@@ -229,6 +229,16 @@ def _mock_payment(reservation):
 # POST /api/reservations/ — Create a reservation
 # ---------------------------------------------------------------------------
 
+#: 403 body for an importer trying to reserve a car.
+IMPORTER_CANNOT_RESERVE = {
+    'code': 'importer_cannot_reserve',
+    'detail': 'Importer accounts sell cars on WARED; they cannot reserve one. '
+              'Use a buyer account to reserve.',
+    'detail_ar': 'حسابات المستوردين تبيع السيارات على وارد ولا يمكنها حجز سيارة. '
+                 'استخدم حساب مشترٍ للحجز.',
+}
+
+
 class ReservationCreateView(APIView):
     """
     POST /api/reservations/
@@ -237,6 +247,14 @@ class ReservationCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        # An importer reserving a car would be a seller entering the buyer
+        # side of the deal: they would owe themselves the balance, appear as
+        # their own counterparty in chat, and show up in another importer's
+        # buyer list. Saving and liking stay open to them — browsing the
+        # market is how they price their own stock.
+        if getattr(request.user, 'role', '') == 'importer':
+            return Response(IMPORTER_CANNOT_RESERVE, status=status.HTTP_403_FORBIDDEN)
+
         serializer = CreateReservationSerializer(
             data=request.data, context={'request': request}
         )

@@ -197,6 +197,13 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
     # View counters (Phase 2.13)
     view_stats = serializers.SerializerMethodField(read_only=True)
 
+    # Whether the requesting user owns this car. Every listing serializer
+    # carries it so a client never has to compare owner_id itself.
+    is_owner = serializers.SerializerMethodField(read_only=True)
+    # The five counts an importer watches. Stripped for everyone else in
+    # `to_representation` — what a car has attracted is the seller's business.
+    owner_stats = serializers.SerializerMethodField(read_only=True)
+
     # Phase 4.6 — Promotion helpers
     is_promoted      = serializers.SerializerMethodField(read_only=True)
     active_promotion = serializers.SerializerMethodField(read_only=True)
@@ -247,6 +254,7 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'missing_for_submit', 'submitted_at', 'status_changed_at',
             # View counters (Phase 2.13)
             'view_count', 'unique_view_count', 'view_stats',
+            'is_owner', 'owner_stats',
             # Images
             'images', 'primary_image',
             # Phase 4.6 — Promotion
@@ -287,6 +295,7 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'make_display', 'model_display', 'description_display',
             'color_display', 'city_display', 'region_display',
             'view_count', 'unique_view_count', 'view_stats',
+            'is_owner', 'owner_stats',
             'rejection_reason', 'admin_notes', 'owner_feedback', 'feedback_at',
             'missing_for_submit', 'submitted_at', 'status_changed_at',
             'is_featured', 'is_highlighted', 'is_top_search', 'is_homepage',
@@ -446,6 +455,9 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             data['feedback_at'] = self._feedback_at(instance)
             data['missing_for_submit'] = self._missing_for_submit(instance)
         else:
+            # Owner-facing only: how many people saved, liked, messaged about
+            # or reserved this car is the seller's business, not a buyer's.
+            data.pop('owner_stats', None)
             # Gated exactly as `owner_feedback` is. A timestamp is a small
             # leak but it is still one: it tells an anonymous caller that a
             # reviewer acted, and when.
@@ -497,6 +509,22 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
         if instance.status == 'rejected':
             return (instance.rejection_reason or '').strip() or None
         return None
+
+    def get_is_owner(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not getattr(user, 'is_authenticated', False):
+            return False
+        return user.pk == obj.owner_id
+
+    def get_owner_stats(self, obj):
+        from .stats import owner_stats
+
+        # Prefetched by the desk, which counts six listings in one go.
+        cached = getattr(self, '_owner_stats_bulk', None)
+        if cached is not None and obj.pk in cached:
+            return cached[obj.pk]
+        return owner_stats(obj)
 
     def get_view_stats(self, obj):
         """
@@ -786,6 +814,16 @@ class ListingListSerializer(BilingualMixin, SocialCountsMixin, serializers.Model
     # Reservation lock as seen by the requesting user
     reservation_state = serializers.SerializerMethodField(read_only=True)
 
+    # Same field, same meaning as on the detail serializer.
+    is_owner = serializers.SerializerMethodField(read_only=True)
+
+    def get_is_owner(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not getattr(user, 'is_authenticated', False):
+            return False
+        return user.pk == obj.owner_id
+
     class Meta:
         model = Listing
         fields = (
@@ -797,7 +835,7 @@ class ListingListSerializer(BilingualMixin, SocialCountsMixin, serializers.Model
             'make_display', 'model_display', 'city_display',
             'is_featured', 'is_highlighted', 'is_homepage',
             'is_promoted', 'owner_verification_level',
-            'negotiable', 'created_at',
+            'is_owner', 'negotiable', 'created_at',
             # Social (likes & comments)
             'like_count', 'comment_count', 'is_liked',
         )
@@ -1545,11 +1583,23 @@ class ListingMapPinSerializer(serializers.ModelSerializer):
     Only the fields needed to render a map pin + tooltip.
     """
     primary_image_url = serializers.SerializerMethodField(read_only=True)
+    # One boolean, so a pin can be drawn as "yours" without a second lookup.
+    is_owner = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model  = Listing
-        fields = ('id', 'make', 'model', 'year', 'price', 'latitude', 'longitude', 'primary_image_url')
+        fields = (
+            'id', 'make', 'model', 'year', 'price',
+            'latitude', 'longitude', 'primary_image_url', 'is_owner',
+        )
         read_only_fields = fields
+
+    def get_is_owner(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not getattr(user, 'is_authenticated', False):
+            return False
+        return user.pk == obj.owner_id
 
     def get_primary_image_url(self, obj):
         primary = obj.images.filter(is_primary=True).first() or obj.images.first()
