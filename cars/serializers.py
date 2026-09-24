@@ -318,6 +318,13 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             'id': owner.id,
             'name': owner.name,
             'role': getattr(owner, 'role', 'user'),
+            # Which id opens this seller's public page. `/api/importers/{pk}/`
+            # is keyed by the PROFILE, not the user, and the two differ — a
+            # client linking with `owner.id` lands on somebody else's importer
+            # or on a 404. None for an owner with no importer profile.
+            'profile_url_id': getattr(
+                getattr(owner, 'importer_profile', None), 'pk', None,
+            ),
         }
         request = self.context.get('request')
         user = getattr(request, 'user', None) if request else None
