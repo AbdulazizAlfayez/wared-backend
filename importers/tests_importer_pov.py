@@ -625,3 +625,45 @@ class ConversationInboxTests(APITestCase):
         message(conv, self.other_buyer)
         data = self._rows(self.buyer, '?group=listing')
         self.assertEqual(data['count'], 0)
+
+
+class ImporterCityRegionTests(APITestCase):
+    """The seller card says where an importer is, region included."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from locations.models import City, Region
+
+        cls.user = User.objects.create_user(
+            email='region-importer@test.sa', password='Passw0rd!x',
+            name='Region Importer', role='importer',
+        )
+        region = Region.objects.create(
+            name_en='Eastern Province', name_ar='المنطقة الشرقية', slug='eastern',
+        )
+        city = City.objects.create(name_en='Dammam', name_ar='الدمام', region=region)
+        cls.profile, _ = ImporterProfile.objects.update_or_create(
+            user=cls.user, defaults={'business_name': 'Region Imports', 'city': city},
+        )
+
+    def test_the_city_block_names_its_region(self):
+        response = self.client.get(f'/api/importers/{self.profile.pk}/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        city = response.data['city']
+        self.assertEqual(city['name_en'], 'Dammam')
+        self.assertEqual(city['region']['name_en'], 'Eastern Province')
+        self.assertEqual(city['region']['name_ar'], 'المنطقة الشرقية')
+
+    def test_an_importer_with_no_city_is_unaffected(self):
+        self.profile.city = None
+        self.profile.save(update_fields=['city'])
+        response = self.client.get(f'/api/importers/{self.profile.pk}/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['city'])
+
+    def test_the_seller_card_fields_are_all_there(self):
+        """What the mobile profile header reads, in one payload."""
+        response = self.client.get(f'/api/importers/{self.profile.pk}/')
+        for field in ('response_time_hours', 'rating_avg', 'reviews_count',
+                      'cars_live', 'member_since', 'is_verified'):
+            self.assertIn(field, response.data)

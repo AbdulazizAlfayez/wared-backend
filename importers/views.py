@@ -23,7 +23,7 @@ class ImporterProfileListView(ListAPIView):
     def get_queryset(self):
         qs = ImporterProfile.objects.filter(
             user__is_business_verified=True,
-        ).select_related('city', 'user')
+        ).select_related('city', 'city__region', 'user')
         p  = self.request.query_params
         if q := p.get('search'):
             qs = qs.filter(business_name__icontains=q)
@@ -43,7 +43,7 @@ class ImporterProfileDetailView(APIView):
 
     def get(self, request, pk):
         try:
-            profile = ImporterProfile.objects.select_related('city', 'user').get(pk=pk)
+            profile = ImporterProfile.objects.select_related('city', 'city__region', 'user').get(pk=pk)
         except ImporterProfile.DoesNotExist:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(ImporterProfileDetailSerializer(profile).data)

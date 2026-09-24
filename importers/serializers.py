@@ -61,6 +61,15 @@ class CityBriefSerializer(serializers.Serializer):
     id      = serializers.IntegerField()
     name_en = serializers.CharField()
     name_ar = serializers.CharField()
+    #: The region the city sits in. A buyer in Dammam reads "Eastern Province"
+    #: as a distance; the city alone only helps if they know the map.
+    region  = serializers.SerializerMethodField()
+
+    def get_region(self, obj):
+        region = getattr(obj, 'region', None)
+        if region is None:
+            return None
+        return {'id': region.pk, 'name_en': region.name_en, 'name_ar': region.name_ar}
 
 
 # ---------------------------------------------------------------------------
