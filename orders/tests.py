@@ -369,12 +369,14 @@ class OrderCarSyncTests(APITestCase):
         return order
 
     def test_order_shipped_syncs_car_to_shipping(self):
-        # 'preparing_shipment' → 'shipped' is the valid transition path
+        # 'preparing_shipment' → 'shipped' is the valid transition path, and
+        # shipping now requires a number the buyer can follow the car with
+        # (see orders/tests_shipment.py).
         order = self._make_order('preparing_shipment')
         self.client.force_authenticate(user=self.importer)
         resp = self.client.patch(
             f'/api/orders/{order.pk}/update-status/',
-            {'status': 'shipped'}, format='json',
+            {'status': 'shipped', 'shipment_number': 'SYNC123'}, format='json',
         )
         self.assertEqual(resp.status_code, 200)
         self.listing.refresh_from_db()

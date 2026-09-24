@@ -198,9 +198,18 @@ def send_order_status_email(self, order_id, old_status, new_status):
     # Status-specific extra context
     extra_ctx = {}
     if new_status == 'shipped':
-        # Pull from latest timeline event if available
-        latest = order.timeline_events.filter(event_type='shipped').order_by('-created_at').first()
-        extra_ctx['vessel_name']       = getattr(latest, 'description', '') if latest else ''
+        # The order carries the shipment itself now. This used to read the
+        # shipped timeline row's `description` and present it as a vessel
+        # name, which was only ever whatever note the importer happened to
+        # type. `carrier` falls back to the listing's shipping line, which is
+        # where the route was recorded before orders knew about shipments.
+        extra_ctx['shipment_number']   = order.shipment_number
+        extra_ctx['carrier']           = order.carrier
+        extra_ctx['vessel_name']       = (
+            order.carrier
+            or getattr(order.car, 'shipping_line', '')
+            or getattr(order.car, 'vessel_name', '')
+        )
         extra_ctx['estimated_arrival'] = (
             order.estimated_delivery_date.strftime('%d %B %Y')
             if order.estimated_delivery_date else ''

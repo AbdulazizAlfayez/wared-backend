@@ -607,6 +607,7 @@ class ReservationPendingForMeView(APIView):
                 },
                 'buyer': {
                     'id': res.buyer.id,
+                    'profile_url_id': brief['profile_url_id'],
                     'name': res.buyer.name,
                     'first_name': brief['first_name'],
                     'initials': brief['initials'],

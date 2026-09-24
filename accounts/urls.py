@@ -25,6 +25,7 @@ from .views import (
     PasswordResetRequestView,
     ProfileUpdateView,
     PublicProfileView,
+    BuyerPublicProfileView,
     RegisterView,
     ResendVerificationOTP,
     SendEmailVerificationOTP,
@@ -84,6 +85,8 @@ urlpatterns = [
     # /api/users/me/profile/ must come BEFORE /api/users/<int:pk>/... to avoid 'me' matching as int
     path('users/me/profile/', ProfileUpdateView.as_view(), name='profile-update'),
     path('users/<int:pk>/profile/', PublicProfileView.as_view(), name='profile-public'),
+    # The buyer behind a deal — importers who share one, and staff, only.
+    path('users/<int:pk>/public/', BuyerPublicProfileView.as_view(), name='profile-public-buyer'),
     path('users/<int:pk>/role', UserRoleView.as_view(), name='user-role'),
     path('users/<int:pk>/', AdminUserUpdateView.as_view(), name='user-update'),
     # Admin user list

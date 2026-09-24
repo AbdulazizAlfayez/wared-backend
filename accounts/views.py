@@ -37,6 +37,7 @@ from .serializers import (
     PasswordResetRequestSerializer,
     ProfileUpdateSerializer,
     PublicProfileSerializer,
+    BuyerPublicProfileSerializer,
     ResendOTPSerializer,
     SendOTPSerializer,
     SubmitVerificationSerializer,
@@ -49,6 +50,7 @@ from .serializers import (
     VerifyOTPSerializer,
 )
 from .models import VerificationRequest, update_verification_level
+from .permissions import CanSeeBuyerProfile
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -873,6 +875,20 @@ class PublicProfileView(generics.RetrieveAPIView):
     """
     permission_classes = [AllowAny]
     serializer_class   = PublicProfileSerializer
+    queryset           = User.objects.select_related('city_obj').all()
+
+
+@extend_schema(tags=['Users'])
+class BuyerPublicProfileView(generics.RetrieveAPIView):
+    """
+    GET /api/users/<pk>/public/ — the buyer behind a deal.
+
+    Open only to an importer who shares a reservation, order or conversation
+    with this buyer, to staff, and to the buyer themselves; everyone else gets
+    403. See `accounts.permissions.CanSeeBuyerProfile`.
+    """
+    permission_classes = [CanSeeBuyerProfile]
+    serializer_class   = BuyerPublicProfileSerializer
     queryset           = User.objects.select_related('city_obj').all()
 
 

@@ -206,6 +206,94 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
         return value
 
 
+class BuyerPublicProfileSerializer(serializers.ModelSerializer):
+    """
+    GET /api/users/<pk>/public/ — who an importer is selling to.
+
+    Trust without contact details: enough for an importer to see that the
+    person holding their car is real and has bought before, and nothing that
+    would let either side take the deal off the platform. Phone and email are
+    absent by construction — not gated, not masked, simply never read — and
+    `show_phone` / `show_email` deliberately do not apply here, because the
+    contact rule on a deal is the balance payment (see
+    `messaging.utils.contact_exchange_allowed`), not a profile preference.
+    """
+    full_name     = serializers.SerializerMethodField()
+    first_name    = serializers.SerializerMethodField()
+    avatar_url    = serializers.SerializerMethodField()
+    city          = serializers.SerializerMethodField()
+    member_since  = serializers.SerializerMethodField()
+    reviews_received = serializers.SerializerMethodField()
+    completed_orders_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = User
+        fields = (
+            'id', 'full_name', 'first_name', 'avatar_url', 'city',
+            'member_since', 'reviews_received', 'completed_orders_count',
+        )
+        read_only_fields = fields
+
+    def get_full_name(self, obj):
+        return (obj.name or '').strip() or None
+
+    def get_first_name(self, obj):
+        """
+        The same first name the reservation rows show, from one place.
+
+        An importer sees "Faisal" on the row and must see "Faisal" on the
+        profile it opens; `person_brief` is what wrote the row.
+        """
+        from orders.serializers import person_brief
+
+        brief = person_brief(obj)
+        return brief['first_name'] if brief else None
+
+    def get_avatar_url(self, obj):
+        try:
+            return obj.avatar.url if obj.avatar else None
+        except Exception:
+            # A CloudinaryField holding a malformed string raises on .url.
+            return None
+
+    def get_city(self, obj):
+        return obj.city_obj.name_en if obj.city_obj else None
+
+    def get_member_since(self, obj):
+        # ISO, matching the importer profile. `PublicProfileSerializer` formats
+        # this as "March 2024"; clients read both, so the two must not be
+        # confused for one another.
+        return obj.date_joined.isoformat() if obj.date_joined else None
+
+    def get_reviews_received(self, obj):
+        """
+        Reviews importers have left about this buyer: `null`, because the
+        platform has no way to write one.
+
+        `Review.review_type` lists 'seller_to_buyer', but nothing creates it —
+        no endpoint, no serializer, no task — and the two review paths that do
+        exist both write reviews *about importers*. Worse, `Review`'s
+        uniqueness constraints key on listing and order, both of which such a
+        row would leave null, so an importer could write the same buyer down
+        without limit. Returning `null` says "this platform does not rate
+        buyers" rather than implying an empty record; a real buyer reputation
+        needs a gated creation path and a constraint first.
+        """
+        return None
+
+    def get_completed_orders_count(self, obj):
+        """
+        Orders this buyer saw through, counted as the importer profile counts
+        them — `status='completed'` only, per
+        `ImporterProfileSerializer.get_completed_orders_count`. 'delivered'
+        means the car arrived but nobody closed the order, and the same word
+        must not mean two things on two profiles.
+        """
+        from orders.models import ImportOrder
+
+        return ImportOrder.objects.filter(buyer=obj, status='completed').count()
+
+
 class PublicProfileSerializer(serializers.ModelSerializer):
     """
     GET /api/users/<pk>/profile/ — public view of any user's profile.
