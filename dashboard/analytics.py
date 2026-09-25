@@ -43,15 +43,10 @@ def _fill_date_gaps(raw_dict: dict, days: int, value_key: str = 'count') -> list
 
 
 def _primary_image_url(listing) -> str | None:
-    """Return the URL of the primary image for a listing, or None."""
-    images = list(listing.images.all())
-    img = next((i for i in images if i.is_primary), None) or (images[0] if images else None)
-    if img and img.image:
-        try:
-            return img.image.url
-        except Exception:
-            return None
-    return None
+    """The primary image as a bare URL, for the analytics rows that send one."""
+    from cars.utils.cloudinary_urls import primary_image_url
+
+    return primary_image_url(listing)
 
 
 # ---------------------------------------------------------------------------

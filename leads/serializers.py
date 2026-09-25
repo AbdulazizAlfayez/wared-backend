@@ -24,10 +24,11 @@ class _ListingInfoSerializer(serializers.Serializer):
     primary_image = serializers.SerializerMethodField()
 
     def get_primary_image(self, obj):
-        primary = obj.images.filter(is_primary=True).first() or obj.images.first()
-        if primary and primary.image:
-            return primary.image.url
-        return None
+        # Also fixes a latent 500: this read `.url` with no guard, so a listing
+        # whose Cloudinary field held a malformed value took the leads list down.
+        from cars.utils.cloudinary_urls import primary_image_payload
+
+        return primary_image_payload(obj)
 
 
 # ---------------------------------------------------------------------------

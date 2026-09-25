@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 from cars.models import Listing, ListingImage
+from cars.tests_image_shape import assert_image_shape
 from cars.utils.cloudinary_urls import cloudinary_transform, image_variants
 
 
@@ -132,15 +133,22 @@ class ListPayloadTest(APITestCase):
         item = resp.data['results'][0]
         self.assertIn('primary_image', item)
         self.assertNotIn('images', item)
-        # primary_image has thumb and card
-        self.assertIn('thumb', item['primary_image'])
-        self.assertIn('card', item['primary_image'])
+        # `primary_image` is `{thumb, card, full}` when there is a photo and
+        # None when there is not — this fixture listing has none. It used to be
+        # a dict of nulls here and a bare URL on the detail endpoint, which is
+        # the divergence that crashed the importer desk; see
+        # cars/tests_image_shape.py for the contract at every endpoint.
+        assert_image_shape(self, item['primary_image'], where='/api/listings/')
+        self.assertIsNone(item['primary_image'], 'this fixture has no photo')
 
     def test_detail_has_images_array_with_variants(self):
         resp = self.client.get(f'/api/listings/{self.listing.id}/')
         self.assertEqual(resp.status_code, 200)
         self.assertIn('images', resp.data)
         self.assertIn('primary_image', resp.data)
+        # The type, not just the key: asserting presence alone is why the
+        # detail/list divergence went unnoticed.
+        assert_image_shape(self, resp.data['primary_image'], where='detail')
 
 
 # ---------------------------------------------------------------------------

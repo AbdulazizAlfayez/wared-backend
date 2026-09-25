@@ -604,6 +604,9 @@ class ReservationPendingForMeView(APIView):
                     'year': res.car.year,
                     'final_price_sar': str(res.car.final_price_sar or res.car.price or 0),
                     'primary_image_url': car.get('primary_image_url'),
+                    # This row used to carry only the URL, so it was the one
+                    # `car` shape in the app missing the sized variants.
+                    'primary_image': car.get('primary_image'),
                 },
                 'buyer': {
                     'id': res.buyer.id,
