@@ -407,12 +407,12 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
         return value
 
     def get_primary_image(self, obj):
-        primary = obj.images.filter(is_primary=True).first()
-        if primary is None:
-            primary = obj.images.first()
-        if primary and primary.image:
-            return primary.image.url
-        return None
+        from .utils.cloudinary_urls import primary_image_payload
+
+        # One shape for every endpoint — see `primary_image_payload`. This used
+        # to be a bare full-size URL, which is why the same key had two types
+        # depending on whether you asked for a list or a detail.
+        return primary_image_payload(obj)
 
     def get_make_display(self, obj):
         return self._pick(obj.make, obj.make_ar)
@@ -849,8 +849,9 @@ class ListingListSerializer(BilingualMixin, SocialCountsMixin, serializers.Model
         read_only_fields = fields
 
     def get_primary_image(self, obj):
-        from .utils.cloudinary_urls import primary_image_variants
-        return primary_image_variants(obj, sizes=('thumb', 'card'))
+        from .utils.cloudinary_urls import primary_image_payload
+
+        return primary_image_payload(obj)
 
     def get_make_display(self, obj):
         return self._pick(obj.make, obj.make_ar)
@@ -944,6 +945,9 @@ class CarListSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'created_at')
 
+    # `Car` is the legacy model with its own `CarImage`; it has no Listing to
+    # hand `primary_image_payload`, so this stays a bare URL. Nothing mobile
+    # reads it — /api/cars/ predates the listing API.
     def get_thumbnail(self, obj):
         first_image = obj.images.first()
         if first_image and first_image.image:
@@ -1590,6 +1594,8 @@ class ListingMapPinSerializer(serializers.ModelSerializer):
     Only the fields needed to render a map pin + tooltip.
     """
     primary_image_url = serializers.SerializerMethodField(read_only=True)
+    #: The same sized variants every other listing endpoint sends.
+    primary_image = serializers.SerializerMethodField(read_only=True)
     # One boolean, so a pin can be drawn as "yours" without a second lookup.
     is_owner = serializers.SerializerMethodField(read_only=True)
 
@@ -1597,7 +1603,7 @@ class ListingMapPinSerializer(serializers.ModelSerializer):
         model  = Listing
         fields = (
             'id', 'make', 'model', 'year', 'price',
-            'latitude', 'longitude', 'primary_image_url', 'is_owner',
+            'latitude', 'longitude', 'primary_image_url', 'primary_image', 'is_owner',
         )
         read_only_fields = fields
 
@@ -1609,10 +1615,14 @@ class ListingMapPinSerializer(serializers.ModelSerializer):
         return user.pk == obj.owner_id
 
     def get_primary_image_url(self, obj):
-        primary = obj.images.filter(is_primary=True).first() or obj.images.first()
-        if primary and primary.image:
-            return primary.image.url
-        return None
+        from .utils.cloudinary_urls import primary_image_url
+
+        return primary_image_url(obj)
+
+    def get_primary_image(self, obj):
+        from .utils.cloudinary_urls import primary_image_payload
+
+        return primary_image_payload(obj)
 
 
 class NearbyListingSerializer(ListingMapPinSerializer):

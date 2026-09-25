@@ -28,15 +28,19 @@ class ListingMiniSerializer(serializers.Serializer):
     year              = serializers.IntegerField()
     price             = serializers.DecimalField(max_digits=12, decimal_places=2)
     primary_image_url = serializers.SerializerMethodField()
+    #: The sized variants, in the shape every listing endpoint now sends.
+    primary_image     = serializers.SerializerMethodField()
 
     def get_primary_image_url(self, obj):
-        primary = obj.images.filter(is_primary=True).first() or obj.images.first()
-        if primary and primary.image:
-            try:
-                return primary.image.url
-            except Exception:
-                return None
-        return None
+        # Kept: the thread header and the inbox rows read this key today.
+        from cars.utils.cloudinary_urls import primary_image_url
+
+        return primary_image_url(obj)
+
+    def get_primary_image(self, obj):
+        from cars.utils.cloudinary_urls import primary_image_payload
+
+        return primary_image_payload(obj)
 
 
 # ---------------------------------------------------------------------------

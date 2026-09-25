@@ -31,14 +31,10 @@ class ListingBriefSerializer(serializers.ModelSerializer):
         fields = ('id', 'make', 'model', 'year', 'price', 'city', 'primary_image')
 
     def get_primary_image(self, obj):
-        # Use prefetch cache — avoid extra queries on lists.
-        images = list(obj.images.all())
-        primary = next((img for img in images if img.is_primary), None)
-        if primary is None and images:
-            primary = images[0]
-        if primary and primary.image:
-            return primary.image.url
-        return None
+        # Reads the prefetch cache, so a list of bookings stays one query.
+        from cars.utils.cloudinary_urls import primary_image_payload
+
+        return primary_image_payload(obj)
 
 
 # ---------------------------------------------------------------------------

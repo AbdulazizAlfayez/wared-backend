@@ -66,3 +66,59 @@ def primary_image_variants(listing, sizes=('thumb', 'card')) -> dict[str, str | 
         for name in sizes
         if name in VARIANTS
     }
+
+
+def primary_image_payload(listing) -> dict[str, str] | None:
+    """
+    The one shape every serializer gives a listing's primary image.
+
+    `{thumb, card, full}` when there is a photo, `None` when there is not —
+    and never a half-and-half. Clients used to meet four shapes for the same
+    key: this dict from `/api/listings/`, a bare full-size URL from the detail,
+    `my`, `compare`, `featured` and the importer desk, the same URL again under
+    `primary_image_url` on conversations and reservations, and `null`. The
+    mobile card read `primary_image.card` and crashed on the desk, where a car
+    with no photos arrives as `null`.
+
+    `None` rather than a dict of nulls, because a caller asking "is there a
+    photo" should not have to look inside to find out; the clients' own helper
+    turns either into a placeholder.
+
+    Uses the prefetched `images` queryset when there is one, so a list of forty
+    cards stays one query.
+    """
+    images = listing.images.all() if listing is not None else []
+    primary = None
+    for image in images:
+        if image.is_primary:
+            primary = image
+            break
+    if primary is None:
+        primary = next(iter(images), None)
+
+    if primary is None or not primary.image:
+        return None
+
+    try:
+        url = primary.image.url
+    except Exception:
+        # A CloudinaryField holding a malformed value raises on `.url`. A
+        # missing photo must not take an endpoint down with it.
+        return None
+
+    if not url:
+        return None
+    return image_variants(url)
+
+
+def primary_image_url(listing) -> str | None:
+    """
+    The bare URL, for the `primary_image_url` fields that already ship it.
+
+    Kept alongside `primary_image_payload` rather than replaced: clients read
+    this key today, and removing it to tidy the API would break them for no
+    gain. It is the `full` variant rather than the untransformed original —
+    nothing wants a 4000px original in a chat header.
+    """
+    payload = primary_image_payload(listing)
+    return payload['full'] if payload else None

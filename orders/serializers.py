@@ -37,13 +37,9 @@ class CarMiniSerializer(serializers.ModelSerializer):
         ]
 
     def get_primary_image(self, obj):
-        img = obj.images.filter(is_primary=True).first() or obj.images.first()
-        if img and img.image:
-            try:
-                return img.image.url
-            except Exception:
-                return None
-        return None
+        from cars.utils.cloudinary_urls import primary_image_payload
+
+        return primary_image_payload(obj)
 
 
 # ---------------------------------------------------------------------------
@@ -612,16 +608,16 @@ class ReservationCarSerializer(serializers.ModelSerializer):
         ]
 
     def get_primary_image_url(self, obj):
-        return self.get_primary_image(obj)
+        # Still a bare URL: clients read this key today, and the sized variants
+        # arrive beside it under `primary_image`.
+        from cars.utils.cloudinary_urls import primary_image_url
+
+        return primary_image_url(obj)
 
     def get_primary_image(self, obj):
-        img = obj.images.filter(is_primary=True).first() or obj.images.first()
-        if img and img.image:
-            try:
-                return img.image.url
-            except Exception:
-                return None
-        return None
+        from cars.utils.cloudinary_urls import primary_image_payload
+
+        return primary_image_payload(obj)
 
 
 #: Statuses in which a reservation is still live and can be acted on.
