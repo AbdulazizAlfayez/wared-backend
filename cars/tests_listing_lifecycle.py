@@ -232,7 +232,7 @@ class VisibilityTests(TestCase):
         self.client.force_authenticate(self.owner)
 
         response = self.client.get('/api/listings/my/')
-        # `/my/` is unpaginated and answers with a bare list.
+        # `/my/` paginates (20 a page); the fallback is for an older server.
         rows = response.data if isinstance(response.data, list) else response.data['results']
         self.assertIn(listing.pk, [row['id'] for row in rows])
 

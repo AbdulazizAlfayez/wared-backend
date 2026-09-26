@@ -98,8 +98,8 @@ class OwnerStatsTests(APITestCase):
 
     def test_my_listings_carries_them(self):
         self.client.force_authenticate(user=self.importer)
-        rows = self.client.get('/api/listings/my/').data
-        self.assertEqual(rows[0]['owner_stats']['views'], 0)
+        body = self.client.get('/api/listings/my/').data
+        self.assertEqual(body['results'][0]['owner_stats']['views'], 0)
 
     def test_counts_are_per_listing(self):
         other = make_listing(self.importer, title='Other')

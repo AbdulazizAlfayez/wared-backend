@@ -612,16 +612,108 @@ class ListingViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    #: `?sort=` on /api/listings/my/, and what each one means.
+    MY_LISTING_SORTS = ('attention', 'newest', 'most_viewed')
+
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='my')
     def my_listings(self, request):
-        listings = (
-            Listing.objects
-            .filter(owner=request.user, is_active=True)
-            .select_related('owner', 'showroom', 'workshop')
-            .prefetch_related('images')
-            .order_by('-created_at')
+        """
+        The importer's own cars, paginated, with their owner stats.
+
+        Sorted by `?sort=`:
+
+          attention   — what is waiting on the importer. A car sent back for
+                        changes or rejected is a job with a deadline; a draft
+                        is unfinished work; a pending one is somebody else's
+                        turn. Within a band, the one people are asking about
+                        leads, because a car with five conversations and no
+                        answer is losing a sale.
+          newest      — what it has always been, and still the default: a
+                        client that sends no `sort` sees exactly what it did.
+          most_viewed — where the attention actually went.
+
+        The stats ride the page query as subquery annotations
+        (`annotate_owner_stats`), so twenty cards cost the page and nothing
+        more — they used to cost five queries per row.
+        """
+        from django.utils import timezone as tz
+
+        from .stats import annotate_owner_stats, annotate_view_stats, owner_stats_bulk
+
+        sort = request.query_params.get('sort') or 'newest'
+        if sort not in self.MY_LISTING_SORTS:
+            return Response(
+                {'error': f"sort must be one of: {', '.join(self.MY_LISTING_SORTS)}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        now = tz.now()
+        listings = annotate_view_stats(
+            annotate_owner_stats(
+                Listing.objects
+                .filter(owner=request.user, is_active=True)
+                # `owner__importer_profile`: the owner block carries
+                # `profile_url_id`, and reading it per row was twenty queries.
+                .select_related(
+                    'owner', 'owner__importer_profile', 'showroom', 'workshop',
+                    # `reservation_state` walks this on a locked car — one
+                    # query per reserved row without it.
+                    'current_reservation',
+                )
+                .prefetch_related(
+                    'images',
+                    # What the main list queryset prefetches, for the same
+                    # reason: `active_promotion` walks this and would otherwise
+                    # ask once per card.
+                    Prefetch(
+                        'promotions',
+                        queryset=ListingPromotion.objects.filter(
+                            status='active', expires_at__gt=now,
+                        ).select_related('package'),
+                        to_attr='active_promotions_prefetched',
+                    ),
+                )
+                # The social counts `SocialCountsMixin` prefers; without them it
+                # falls back to a query per row, per count.
+                .annotate(
+                    like_total=Count('likes', distinct=True),
+                    comment_total=Count(
+                        'comments',
+                        filter=Q(comments__is_deleted=False, comments__is_hidden=False),
+                        distinct=True,
+                    ),
+                )
+            ),
+            now=now,
         )
-        serializer = self.get_serializer(listings, many=True)
+
+        if sort == 'attention':
+            listings = listings.annotate(
+                _attention=Case(
+                    # Sent back: the importer has to do something before this
+                    # car can sell at all.
+                    When(status__in=('changes_requested', 'rejected'), then=Value(0)),
+                    # Their own unfinished work.
+                    When(status='draft', then=Value(1)),
+                    # Waiting on a reviewer, not on them.
+                    When(status='pending', then=Value(2)),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                ),
+            ).order_by('_attention', '-stats_messages', '-created_at', '-id')
+        elif sort == 'most_viewed':
+            listings = listings.order_by('-view_count', '-created_at', '-id')
+        else:
+            listings = listings.order_by('-created_at', '-id')
+
+        page = self.paginate_queryset(listings)
+        rows = page if page is not None else list(listings)
+        serializer = self.get_serializer(rows, many=True)
+        # One round of counts for the whole page, read off the annotations.
+        if rows:
+            serializer.child._owner_stats_bulk = owner_stats_bulk(rows)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
 
     def retrieve(self, request, *args, **kwargs):
