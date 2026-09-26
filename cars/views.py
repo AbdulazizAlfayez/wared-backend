@@ -5,7 +5,7 @@ from datetime import timedelta
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import models as db_models
 from django.db.models import Case, Count, F, IntegerField, Max, Min, Q, Value, When
-from django.db.models.functions import ExtractHour, TruncDate
+from django.db.models.functions import Coalesce, ExtractHour, TruncDate
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -622,14 +622,15 @@ class ListingViewSet(viewsets.ModelViewSet):
 
         Sorted by `?sort=`:
 
-          attention   — what is waiting on the importer. A car sent back for
-                        changes or rejected is a job with a deadline; a draft
-                        is unfinished work; a pending one is somebody else's
-                        turn. Within a band, the one people are asking about
-                        leads, because a car with five conversations and no
-                        answer is losing a sale.
-          newest      — what it has always been, and still the default: a
-                        client that sends no `sort` sees exactly what it did.
+          attention   — the default, and what is waiting on the importer. A
+                        car sent back for changes or rejected is a job with a
+                        deadline; a draft is their own unfinished work; a
+                        pending one is somebody else's turn. Then the cars
+                        that are selling but have somebody waiting — an
+                        unanswered buyer or a reservation to decide on —
+                        because that is a sale in progress. Then the rest,
+                        most recently touched first.
+          newest      — by when the car was listed.
           most_viewed — where the attention actually went.
 
         The stats ride the page query as subquery annotations
@@ -638,9 +639,14 @@ class ListingViewSet(viewsets.ModelViewSet):
         """
         from django.utils import timezone as tz
 
-        from .stats import annotate_owner_stats, annotate_view_stats, owner_stats_bulk
+        from .stats import (
+            annotate_attention,
+            annotate_owner_stats,
+            annotate_view_stats,
+            owner_stats_bulk,
+        )
 
-        sort = request.query_params.get('sort') or 'newest'
+        sort = request.query_params.get('sort') or 'attention'
         if sort not in self.MY_LISTING_SORTS:
             return Response(
                 {'error': f"sort must be one of: {', '.join(self.MY_LISTING_SORTS)}."},
@@ -688,19 +694,37 @@ class ListingViewSet(viewsets.ModelViewSet):
         )
 
         if sort == 'attention':
-            listings = listings.annotate(
+            listings = annotate_attention(listings).annotate(
                 _attention=Case(
                     # Sent back: the importer has to do something before this
                     # car can sell at all.
                     When(status__in=('changes_requested', 'rejected'), then=Value(0)),
-                    # Their own unfinished work.
+                    # Their own unfinished work. Not in the brief's list, but
+                    # it is work waiting on them, which is what this sort is
+                    # for — and a pending car is waiting on a reviewer.
                     When(status='draft', then=Value(1)),
                     # Waiting on a reviewer, not on them.
                     When(status='pending', then=Value(2)),
-                    default=Value(3),
+                    # Selling, with somebody waiting: a buyer whose message
+                    # has not been answered, or a reservation to decide on.
+                    When(
+                        Q(status='approved')
+                        & (Q(stats_unanswered__gt=0) | Q(stats_pending_reservations__gt=0)),
+                        then=Value(3),
+                    ),
+                    default=Value(4),
                     output_field=IntegerField(),
                 ),
-            ).order_by('_attention', '-stats_messages', '-created_at', '-id')
+                # "Most recently touched". `Listing` has no `updated_at`
+                # column, and adding an auto_now one would quietly go stale:
+                # most of the writes in this codebase pass `update_fields`,
+                # and Django only refreshes an auto_now field that is named
+                # there. `status_changed_at` is the real signal — it is
+                # stamped on every approve, reject, request-changes and
+                # submit — and creation is the fallback for a car nothing has
+                # happened to yet.
+                _touched=Coalesce('status_changed_at', 'created_at'),
+            ).order_by('_attention', '-_touched', '-id')
         elif sort == 'most_viewed':
             listings = listings.order_by('-view_count', '-created_at', '-id')
         else:
