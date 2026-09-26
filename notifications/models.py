@@ -60,6 +60,8 @@ class Notification(models.Model):
         ('appointment_cancelled', 'Appointment Cancelled'),
         ('price_drop',            'Price Drop'),
         ('listing_expiring',      'Listing Expiring'),
+        ('listing_withdrawn',     'Listing Withdrawn'),
+        ('listing_relisted',      'Listing Relisted'),
         ('system',                'System Notification'),
         # Phase 3.1 — Messaging
         ('new_message',           'New Message'),

@@ -139,6 +139,44 @@ def _send_listing_email(listing_id: int, action: str, reason: str = '') -> None:
         logger.error("_send_listing_email(%s, %s) failed: %s", listing_id, action, exc, exc_info=True)
 
 
+def _notify_withdrawal(listing, *, withdrawn: bool) -> None:
+    """
+    Tell the importer their own car left or rejoined the market.
+
+    Their own action, so it reads as a receipt rather than news — but it is
+    the one thing on the platform that makes a live car invisible, and an
+    importer who forgets they did it would otherwise sit watching a car get no
+    views and no messages with nothing anywhere to explain why.
+
+    Bilingual title, Arabic body: the house shape for every other listing
+    notification. Neither type has a preference field, so neither can be
+    switched off into silence.
+    """
+    try:
+        from notifications.utils import notify
+    except ImportError:
+        return
+
+    if withdrawn:
+        notify(
+            recipient=listing.owner,
+            notification_type='listing_withdrawn',
+            title='تم سحب إعلانك من السوق / Your listing is off the market',
+            message=f'إعلانك "{listing.title}" ما عاد يظهر للمشترين. تقدر تعيد نشره في أي وقت.',
+            listing=listing,
+            metadata={'listing_id': listing.pk, 'withdrawn': True},
+        )
+    else:
+        notify(
+            recipient=listing.owner,
+            notification_type='listing_relisted',
+            title='عاد إعلانك للسوق / Your listing is back on the market',
+            message=f'إعلانك "{listing.title}" ظاهر للمشترين من جديد.',
+            listing=listing,
+            metadata={'listing_id': listing.pk, 'withdrawn': False},
+        )
+
+
 def _notify_listing_status_change(instance, old_status: str, request_user) -> None:
     """Send notification + email when a listing transitions to approved/rejected."""
     if old_status == instance.status:
@@ -612,6 +650,96 @@ class ListingViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated],
+            url_path='withdraw')
+    def withdraw(self, request, pk=None):
+        """
+        Take an approved car off the market without deleting or unlisting it.
+
+        The importer's answer to "this one is spoken for / I need to redo the
+        photos / it is not ready": buyers stop seeing it immediately, the
+        approval survives, and `relist` puts it back with no second review.
+
+        Refused with 409 when somebody else has a claim on the car — a paid
+        reservation or a live order — because that claim outlives the seller's
+        second thoughts, and the buyer holding it would otherwise watch the car
+        vanish mid-deal.
+        """
+        from .withdraw import refusal_to_withdraw, withdraw as do_withdraw
+
+        listing = self.get_object()
+        # `IsOwnerOrAdmin` has already turned strangers away, so this only ever
+        # catches an admin: withdrawing is a seller's commercial decision about
+        # their own stock, not a moderation action. An admin who needs a car off
+        # the market has `reject` and `request-changes`, which say why.
+        if listing.owner_id != request.user.pk:
+            return Response(
+                {'code': 'owner_only',
+                 'detail': 'Only the owner can withdraw this listing.',
+                 'detail_ar': 'يمكن لصاحب الإعلان وحده سحبه.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        refusal = refusal_to_withdraw(listing)
+        if refusal is not None:
+            return Response(refusal, status=status.HTTP_409_CONFLICT)
+
+        do_withdraw(listing)
+        # The same audit trail `submit`, `approve`, `reject` and
+        # `request-changes` leave: a car that stopped being visible is exactly
+        # the kind of change someone asks about a month later.
+        log_action(
+            user=request.user,
+            action='update',
+            model_name='Listing',
+            object_id=listing.pk,
+            old_value={'is_active': True, 'withdrawn_at': None},
+            new_value={'is_active': False, 'withdrawn_at': str(listing.withdrawn_at)},
+            ip_address=get_client_ip(request),
+        )
+        _notify_withdrawal(listing, withdrawn=True)
+        return Response(self.get_serializer(listing).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated],
+            url_path='relist')
+    def relist(self, request, pk=None):
+        """
+        Put a withdrawn car back on the market. No re-review: it never left
+        `approved`, so there is nothing for a moderator to look at again.
+        """
+        from .withdraw import refusal_to_relist, relist as do_relist
+
+        listing = self.get_object()
+        # `IsOwnerOrAdmin` has already turned strangers away, so this only ever
+        # catches an admin: withdrawing is a seller's commercial decision about
+        # their own stock, not a moderation action. An admin who needs a car off
+        # the market has `reject` and `request-changes`, which say why.
+        if listing.owner_id != request.user.pk:
+            return Response(
+                {'code': 'owner_only',
+                 'detail': 'Only the owner can relist this listing.',
+                 'detail_ar': 'يمكن لصاحب الإعلان وحده إعادة نشره.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        refusal = refusal_to_relist(listing)
+        if refusal is not None:
+            return Response(refusal, status=status.HTTP_409_CONFLICT)
+
+        was_withdrawn_at = listing.withdrawn_at
+        do_relist(listing)
+        log_action(
+            user=request.user,
+            action='update',
+            model_name='Listing',
+            object_id=listing.pk,
+            old_value={'is_active': False, 'withdrawn_at': str(was_withdrawn_at)},
+            new_value={'is_active': True, 'withdrawn_at': None},
+            ip_address=get_client_ip(request),
+        )
+        _notify_withdrawal(listing, withdrawn=False)
+        return Response(self.get_serializer(listing).data)
+
     #: `?sort=` on /api/listings/my/, and what each one means.
     MY_LISTING_SORTS = ('attention', 'newest', 'most_viewed')
 
@@ -657,7 +785,10 @@ class ListingViewSet(viewsets.ModelViewSet):
         listings = annotate_view_stats(
             annotate_owner_stats(
                 Listing.objects
-                .filter(owner=request.user, is_active=True)
+                # `is_active=False` is a soft delete — except when the owner
+                # withdrew the car, which is a state they need to see and undo.
+                .filter(owner=request.user)
+                .filter(Q(is_active=True) | Q(withdrawn_at__isnull=False))
                 # `owner__importer_profile`: the owner block carries
                 # `profile_url_id`, and reading it per row was twenty queries.
                 .select_related(

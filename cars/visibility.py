@@ -10,6 +10,10 @@ Business rule (WARED):
     cancelled/refunded) is likewise private to its parties.
   - When the reservation/order ends without a purchase the lock is released
     (orders.models) and the car satisfies this rule again automatically.
+  - A car its owner has WITHDRAWN (`cars/withdraw.py`) is off the market for
+    everyone but its owner and staff, while staying approved. It differs from
+    a soft delete only by `withdrawn_at`, which is why the owner's own branch
+    below reads that rather than `is_active` alone.
 
 Every public listing queryset filters on `public_market_q(user, browse=...)`.
 Do not add a second rule anywhere else.
@@ -59,6 +63,20 @@ def is_staff_user(user):
     )
 
 
+def owns_and_not_deleted(user):
+    """
+    The owner's claim on their own listing.
+
+    `is_active=False` means one of two different things: soft-deleted
+    (`ListingViewSet.destroy`) or withdrawn from the market by the owner
+    (`cars/withdraw.py`). A deleted listing is gone for everyone including its
+    owner; a withdrawn one is off the market but still theirs — they have to
+    be able to open it to put it back, and a 404 on their own car would make
+    `relist` unreachable. `withdrawn_at` is what tells the two apart.
+    """
+    return Q(owner=user) & (Q(is_active=True) | Q(withdrawn_at__isnull=False))
+
+
 def moderation_q(user=None):
     """
     The moderation gate on its own: may this user be shown, or act on, this
@@ -81,7 +99,7 @@ def moderation_q(user=None):
     q = Q(status='approved') & Q(is_active=True)
     if user is None or not getattr(user, 'is_authenticated', False):
         return q
-    return q | (Q(owner=user) & Q(is_active=True))
+    return q | owns_and_not_deleted(user)
 
 
 def public_market_q(user=None, browse=False):
@@ -130,7 +148,7 @@ def public_market_q(user=None, browse=False):
         # `/api/listings/my/`.
         return q
     return q | (
-        (Q(owner=user) & Q(is_active=True))
+        owns_and_not_deleted(user)
         | Exists(Reservation.objects.filter(
             car=OuterRef('pk'), buyer=user,
             status__in=LIVE_RESERVATION_STATUSES,

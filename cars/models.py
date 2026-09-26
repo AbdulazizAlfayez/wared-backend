@@ -767,6 +767,10 @@ class Listing(models.Model):
         related_name='listings',
     )
     is_active = models.BooleanField(default=True)  # soft delete: False = hidden
+    #: When the owner took an approved car off the market (`cars/withdraw.py`).
+    #: `is_active=False` alone cannot mean "withdrawn" — a soft delete sets the
+    #: same flag — so this is what separates the two, and `relist` clears it.
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
