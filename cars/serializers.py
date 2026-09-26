@@ -461,6 +461,14 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
             data['owner_feedback'] = self._owner_feedback(instance)
             data['feedback_at'] = self._feedback_at(instance)
             data['missing_for_submit'] = self._missing_for_submit(instance)
+            # `withdrawn` is a word the moderation column does not have: the
+            # listing is still approved, its owner has simply taken it off the
+            # market. Only they and staff ever see this listing at all, so only
+            # they need the vocabulary — and a buyer's `status` stays one of
+            # the six the public serializers have always sent.
+            from .withdraw import is_withdrawn
+            if is_withdrawn(instance):
+                data['status'] = 'withdrawn'
         else:
             # Owner-facing only: how many people saved, liked, messaged about
             # or reserved this car is the seller's business, not a buyer's.

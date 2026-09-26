@@ -14,6 +14,7 @@ a stale order follow.
 """
 from datetime import timedelta
 
+from django.db.models import Q
 from django.utils import timezone
 
 #: At most this many items in `attention`.
@@ -255,7 +256,13 @@ def build_desk(user, request=None, now=None):
 
     recent = list(
         Listing.objects
-        .filter(owner=user, is_active=True)
+        # Withdrawn cars belong here: this is the importer's own shelf, and a
+        # car that vanished from it the moment they took it off the market
+        # would read as deleted. The counts above stay live-only — withdrawn is
+        # precisely what "not live" means — and the card's own pill says
+        # `Withdrawn`, because `ListingSerializer` gives the owner that word.
+        .filter(owner=user)
+        .filter(Q(is_active=True) | Q(withdrawn_at__isnull=False))
         .select_related('owner', 'city_obj', 'current_reservation')
         .prefetch_related('images')
         .order_by('-created_at')[:6]
