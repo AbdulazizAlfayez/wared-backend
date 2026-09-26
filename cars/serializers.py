@@ -550,6 +550,14 @@ class ListingSerializer(BilingualMixin, SocialCountsMixin, serializers.ModelSeri
         if user.pk != obj.owner_id and getattr(user, 'role', None) != 'admin':
             return None
 
+        # Annotated by `annotate_view_stats` on the endpoints that render many
+        # rows; three queries per row is a detail page's luxury, not a list's.
+        from .stats import view_stats_from_annotations
+
+        annotated = view_stats_from_annotations(obj)
+        if annotated is not None:
+            return annotated
+
         now        = timezone.now()
         today      = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_ago   = now - timedelta(days=7)
