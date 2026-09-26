@@ -258,6 +258,91 @@ class MyListingsSortTests(TestCase):
         self.assertEqual(self._ids()[0], sent_back.pk)
         self.assertEqual(self._ids(), self._ids('attention'))
 
+    def test_a_withdrawn_car_sorts_last_whatever_else_is_true_of_it(self):
+        """
+        It is the one row waiting on nobody. Given a buyer's unanswered
+        message as well — which would otherwise rank it as a sale in progress
+        — it still goes to the bottom.
+        """
+        from cars.withdraw import withdraw
+
+        busy = self._listing('approved', 'Withdrawn but asked about', conversations=2)
+        quiet = self._listing('approved', 'Quiet')
+        sent_back = self._listing('changes_requested', 'Sent back')
+        withdraw(busy)
+
+        order = self._ids('attention')
+
+        self.assertEqual(order[-1], busy.pk)
+        self.assertEqual(order[0], sent_back.pk)
+        self.assertIn(quiet.pk, order)
+
+    def test_withdrawn_is_still_returned_by_my(self):
+        from cars.withdraw import withdraw
+
+        listing = self._listing('approved', 'Gone quiet')
+        withdraw(listing)
+
+        rows = self.client.get('/api/listings/my/').data['results']
+
+        row = next(r for r in rows if r['id'] == listing.pk)
+        self.assertEqual(row['status'], 'withdrawn')
+
+    def test_the_status_filter_narrows_to_one_chip(self):
+        from cars.withdraw import withdraw
+
+        withdrawn = self._listing('approved', 'Withdrawn')
+        self._listing('approved', 'Live')
+        self._listing('draft', 'Draft')
+        withdraw(withdrawn)
+
+        rows = self.client.get('/api/listings/my/?status=withdrawn').data['results']
+
+        self.assertEqual([r['id'] for r in rows], [withdrawn.pk])
+        self.assertEqual(rows[0]['status'], 'withdrawn')
+
+    def test_approved_does_not_answer_for_a_withdrawn_car(self):
+        """
+        `withdrawn` is not a column value — the row stays `approved` — so the
+        Approved chip has to exclude it by hand, or it would file a car buyers
+        cannot see under the label for the ones they can.
+        """
+        from cars.withdraw import withdraw
+
+        withdrawn = self._listing('approved', 'Withdrawn')
+        live = self._listing('approved', 'Live')
+        withdraw(withdrawn)
+
+        rows = self.client.get('/api/listings/my/?status=approved').data['results']
+
+        self.assertEqual([r['id'] for r in rows], [live.pk])
+
+    def test_every_chip_value_is_accepted(self):
+        for wanted in ('draft', 'pending', 'approved', 'rejected',
+                       'changes_requested', 'sold', 'withdrawn'):
+            with self.subTest(status=wanted):
+                response = self.client.get(f'/api/listings/my/?status={wanted}')
+                self.assertEqual(response.status_code, 200)
+
+    def test_an_unknown_status_is_a_400_rather_than_a_silent_everything(self):
+        """A chip that quietly filtered nothing would show the whole list."""
+        response = self.client.get('/api/listings/my/?status=archived')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('withdrawn', response.data['error'])
+
+    def test_the_filter_combines_with_the_sort(self):
+        from cars.withdraw import withdraw
+
+        first = self._listing('approved', 'First', views=10)
+        second = self._listing('approved', 'Second', views=90)
+        withdraw(first)
+        withdraw(second)
+
+        rows = self.client.get('/api/listings/my/?status=withdrawn&sort=most_viewed').data['results']
+
+        self.assertEqual([r['id'] for r in rows], [second.pk, first.pk])
+
     def test_an_unknown_sort_is_a_400_rather_than_a_silent_newest(self):
         """
         Ignoring it would have the client show "Most viewed" over a list that

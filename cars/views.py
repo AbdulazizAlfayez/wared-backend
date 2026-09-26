@@ -740,8 +740,34 @@ class ListingViewSet(viewsets.ModelViewSet):
         _notify_withdrawal(listing, withdrawn=False)
         return Response(self.get_serializer(listing).data)
 
+    @staticmethod
+    def _my_listing_status_q(wanted):
+        """
+        One chip's value as a filter over the owner's own listings.
+
+        `withdrawn` is not a value of the `status` column — the row stays
+        `approved` and `withdrawn_at` is what makes it withdrawn — so it maps
+        to the timestamp. And `approved` has to exclude those same rows: a
+        withdrawn car answering the "Approved" chip would put a car that
+        buyers cannot see under the label for the ones they can.
+        """
+        if wanted == 'withdrawn':
+            return Q(withdrawn_at__isnull=False)
+        if wanted == 'approved':
+            return Q(status='approved') & Q(withdrawn_at__isnull=True)
+        return Q(status=wanted)
+
     #: `?sort=` on /api/listings/my/, and what each one means.
     MY_LISTING_SORTS = ('attention', 'newest', 'most_viewed')
+
+    #: `?status=` on /api/listings/my/ — the owner's own vocabulary, which is
+    #: the six moderation states plus `withdrawn`, a word only the owner's
+    #: serializer uses (`cars/withdraw.py`). It is not a column, so it cannot
+    #: be passed to `.filter(status=...)` — see `_my_listing_status_q`.
+    MY_LISTING_STATUSES = (
+        'draft', 'pending', 'approved', 'rejected', 'changes_requested',
+        'sold', 'withdrawn',
+    )
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='my')
     def my_listings(self, request):
@@ -761,6 +787,14 @@ class ListingViewSet(viewsets.ModelViewSet):
           newest      — by when the car was listed.
           most_viewed — where the attention actually went.
 
+        A withdrawn car sorts last under `attention` whatever else is true of
+        it: it is off the market by its owner's own hand, so it is the one
+        thing in the list waiting on nobody.
+
+        `?status=` narrows to one chip's worth — the six moderation states
+        plus `withdrawn`. Without it the client can only filter the pages it
+        has already loaded, which is a filter that lies until the list ends.
+
         The stats ride the page query as subquery annotations
         (`annotate_owner_stats`), so twenty cards cost the page and nothing
         more — they used to cost five queries per row.
@@ -778,6 +812,16 @@ class ListingViewSet(viewsets.ModelViewSet):
         if sort not in self.MY_LISTING_SORTS:
             return Response(
                 {'error': f"sort must be one of: {', '.join(self.MY_LISTING_SORTS)}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        wanted = request.query_params.get('status') or ''
+        if wanted and wanted not in self.MY_LISTING_STATUSES:
+            # Refused rather than ignored, for the same reason an unknown sort
+            # is: a chip that silently filtered nothing would show the whole
+            # list under a label saying otherwise.
+            return Response(
+                {'error': f"status must be one of: {', '.join(self.MY_LISTING_STATUSES)}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -824,9 +868,17 @@ class ListingViewSet(viewsets.ModelViewSet):
             now=now,
         )
 
+        if wanted:
+            listings = listings.filter(self._my_listing_status_q(wanted))
+
         if sort == 'attention':
             listings = annotate_attention(listings).annotate(
                 _attention=Case(
+                    # First, so it wins over every band below: a withdrawn car
+                    # can still carry unanswered messages, and it must not be
+                    # ranked as a sale in progress when buyers cannot see it.
+                    # It is the one thing here that is waiting on nobody.
+                    When(withdrawn_at__isnull=False, then=Value(5)),
                     # Sent back: the importer has to do something before this
                     # car can sell at all.
                     When(status__in=('changes_requested', 'rejected'), then=Value(0)),
